@@ -5,9 +5,8 @@ from typing import List
 
 import pandas as pd
 from PyQt6.QtCore import Qt, QSettings
+from PyQt6.QtGui import QAction, QActionGroup
 from PyQt6.QtWidgets import (
-    QAction,
-    QActionGroup,
     QApplication,
     QFileDialog,
     QInputDialog,
