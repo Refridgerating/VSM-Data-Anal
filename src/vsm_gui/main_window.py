@@ -3,7 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
-from PyQt6.QtGui import QAction
+from PyQt6.QtCore import QUrl
+from PyQt6.QtGui import QAction, QDesktopServices
 from PyQt6.QtWidgets import (
     QDialog,
     QFileDialog,
@@ -16,6 +17,7 @@ from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as Navigation
 from .file_io.loader import read_csv
 from .plotting.manager import PlotManager
 from .utils import errors
+from .utils.logging import LOG_FILE
 from .widgets.axis_mapping import AxisMappingDialog
 from .widgets.file_picker import pick_csv_files
 from .widgets.plot_pane import PlotPane
@@ -87,6 +89,9 @@ class MainWindow(QMainWindow):
         about_act = QAction(ABOUT_TEXT, self)
         about_act.triggered.connect(self.show_about)
         help_menu.addAction(about_act)
+        show_log_act = QAction("Show Log File", self)
+        show_log_act.triggered.connect(self.show_log_file)
+        help_menu.addAction(show_log_act)
 
     def open_files(self) -> None:
         paths = [Path(p) for p in pick_csv_files(self)]
@@ -136,3 +141,6 @@ class MainWindow(QMainWindow):
 
     def show_about(self) -> None:
         errors.show_info(self, ABOUT_MESSAGE, ABOUT_TEXT)
+
+    def show_log_file(self) -> None:
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(LOG_FILE)))
