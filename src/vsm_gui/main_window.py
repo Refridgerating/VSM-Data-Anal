@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import (
     QDialog,
     QFileDialog,
     QMainWindow,
+    QMessageBox,
     QVBoxLayout,
     QWidget,
 )
@@ -17,7 +18,7 @@ from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as Navigation
 from .file_io.loader import read_csv
 from .plotting.manager import PlotManager
 from .utils import errors
-from .utils.logging import LOG_FILE
+from .utils.logging import LOG_FILE, logger
 from .widgets.axis_mapping import AxisMappingDialog
 from .widgets.file_picker import pick_csv_files
 from .widgets.plot_pane import PlotPane
@@ -94,45 +95,49 @@ class MainWindow(QMainWindow):
         help_menu.addAction(show_log_act)
 
     def open_files(self) -> None:
-        paths = [Path(p) for p in pick_csv_files(self)]
-        if not paths:
-            return
+        try:
+            paths = [Path(p) for p in pick_csv_files(self)]
+            if not paths:
+                return
 
-        dataframes: list[pd.DataFrame] = []
-        valid_paths: list[Path] = []
-        for path in paths:
-            try:
-                df = read_csv(path)
-            except Exception as exc:  # noqa: BLE001
-                errors.show_error(self, f"Failed to read {path.name}: {exc}")
-                continue
-            dataframes.append(df)
-            valid_paths.append(path)
+            dataframes: list[pd.DataFrame] = []
+            valid_paths: list[Path] = []
+            for path in paths:
+                try:
+                    df = read_csv(path)
+                except Exception as exc:  # noqa: BLE001
+                    errors.show_error(self, f"Failed to read {path.name}: {exc}")
+                    continue
+                dataframes.append(df)
+                valid_paths.append(path)
 
-        if not dataframes:
-            return
+            if not dataframes:
+                return
 
-        headers = list(dataframes[0].columns)
-        dialog = AxisMappingDialog(headers, self._last_x, self._last_y, self)
-        if dialog.exec() != QDialog.DialogCode.Accepted:
-            return
-        x_col, y_col = dialog.get_mapping()
-        self._last_x, self._last_y = x_col, y_col
+            headers = list(dataframes[0].columns)
+            dialog = AxisMappingDialog(headers, self._last_x, self._last_y, self)
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return
+            x_col, y_col = dialog.get_mapping()
+            self._last_x, self._last_y = x_col, y_col
 
-        self.manager.clear()
-        for df, path in zip(dataframes, valid_paths):
-            if x_col not in df.columns or y_col not in df.columns:
-                errors.show_error(
-                    self,
-                    f"{path.name} missing column '{x_col}' or '{y_col}'",
-                    title="Missing Column",
-                )
-                continue
-            self.manager.add(path.stem, df, x_col, y_col)
+            self.manager.clear()
+            for df, path in zip(dataframes, valid_paths):
+                if x_col not in df.columns or y_col not in df.columns:
+                    errors.show_error(
+                        self,
+                        f"{path.name} missing column '{x_col}' or '{y_col}'",
+                        title="Missing Column",
+                    )
+                    continue
+                self.manager.add(path.stem, df, x_col, y_col)
 
-        self.manager.set_labels(x_col, y_col)
-        self.pane.show_legend(True)
-        self._legend_action.setChecked(True)
+            self.manager.set_labels(x_col, y_col)
+            self.pane.show_legend(True)
+            self._legend_action.setChecked(True)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Failed to open files")
+            QMessageBox.critical(self, "Error", str(exc))
 
     def export_plot(self) -> None:
         path_str, _ = QFileDialog.getSaveFileName(self, EXPORT_TEXT, "", PNG_FILTER)
