@@ -5,8 +5,8 @@ A GUI-based toolkit for importing, visualizing, and analyzing Vibrating Sample M
 Status: Initial spec & scaffolding for Codex/agent-driven implementation.
 Target audience: Experimentalists working with VSM hysteresis and M(H/T) data.
 
-Key Features
-GUI-first workflow
+# Key Features
+## GUI-first workflow
 
 File picker with multi-select; drag‑and‑drop support.
 
@@ -22,29 +22,29 @@ Export plots to PNG, SVG, PDF; export processed data and fit results to CSV/JSON
 
 Project files (.vsmproj, JSON) to save/restore sessions (files, styles, fits, views).
 
-Flexible data ingestion
+## Flexible data ingestion
 
 CSV/TSV and common vendor formats (e.g., Quantum Design, Lakeshore) via parser plugins.
 
 Header autodetect with manual override and mapping UI.
 
-Analysis & fitting
+## Analysis & fitting
 
-Saturation magnetization (Ms):
+### Saturation magnetization (Ms):
 
 High-field linear fit & extrapolation or plateau averaging.
 
 Unit-aware conversion (emu → A/m, emu/g → A·m²/kg), with prompts for sample geometry, mass, density, dimensions.
 
-Coercivity (Hc):
+### Coercivity (Hc):
 
 Zero-crossing interpolation on ascending/descending branches; optional smoothing.
 
-Remanent magnetization (Mr):
+### Remanent magnetization (Mr):
 
 Intercept at H=0 with spline/linear interpolation.
 
-Anisotropy constants (e.g., Ku):
+### Anisotropy constants (e.g., Ku):
 
 Sucksmith–Thompson method (plot M/H vs M²; linear fit → Ku).
 
@@ -52,7 +52,7 @@ Optional hard/easy axis energy method (requires angle/geometry inputs).
 
 Prompts for demagnetizing factors (shapes: thin film, rod, sphere) and orientation.
 
-Paramagnetic background subtraction:
+### Paramagnetic background subtraction:
 
 High-field χ·H linear tail fit & subtract (select field window).
 
@@ -60,65 +60,71 @@ Optional Langevin/Brillouin fit for superparamagnetic contributions.
 
 Before/after comparison overlay; residual diagnostics.
 
-Batch processing
+## Batch processing
 
 Apply the same axis/fit/export settings to multiple files at once.
 
 Generate parameter tables (Ms, Hc, Mr, Ku, χ) across datasets.
 
-Reproducibility
+## Reproducibility
 
 All fits/inputs recorded in project metadata; one-click report export (PDF/Markdown).
 
 
-Data Expectations
-Typical VSM headers the app can map automatically (case-insensitive):
+# Data Expectations
+## Typical VSM headers the app can map automatically (case-insensitive):
 
-Field, H, Magnetic Field (Oe/T), Applied Field
+### Field, H, Magnetic Field (Oe/T), Applied Field
 
-Moment, M (emu), Magnetization (emu/g, emu/cm^3, A/m)
+### Moment, M (emu), Magnetization (emu/g, emu/cm^3, A/m)
 
-Time, Temperature, Sweep #
+### Time, Temperature, Sweep #
 
 Users can reassign columns in the Axis Mapping panel. Mixed-unit files are supported with per-column unit tags.
 
 
-Installation
-Prerequisites
+# Installation
+## Prerequisites
 Python 3.10+
 
 Recommended: a virtual environment (venv or conda)
 
-Dependencies
+## Dependencies
 Declared in pyproject.toml / requirements.txt:
 
-GUI: PyQt6 (or qtpy as abstraction)
+* GUI: PyQt6 (or qtpy as abstraction)
 
-Plotting: matplotlib
+* Plotting: matplotlib
 
-Data: pandas, numpy
+* Data: pandas, numpy
 
-Fitting: scipy, lmfit (optional but recommended)
+* Fitting: scipy, lmfit (optional but recommended)
 
-Units: pint
+* Units: pint
 
-Config/IO: pydantic, ruamel.yaml (optional)
+* Config/IO: pydantic, ruamel.yaml (optional)
 
-Export: reportlab (for PDF report), jinja2 (templated reports)
+* Export: reportlab (for PDF report), jinja2 (templated reports)
 
-Install:
+# Install:
 
 bash:
+```
 pip install -r requirements.txt
-# or
+```
+or
+```
 pipx runpip vsm-gui install -r requirements.txt
-Run (dev):
+```
+# Run (dev):
 
-bash
+bash:
+```
 python -m vsm_gui
+```
 
-
-
+# Repository Layout
+```
 vsm-gui/
 ├─ src/
 │  └─ vsm_gui/
@@ -176,135 +182,151 @@ vsm-gui/
 ├─ requirements.txt
 ├─ README.md
 └─ LICENSE
+```
 
+# Usage Overview
+## 1) Import Data
+* File → Import… (multi-select) or drag & drop into the file list.
 
-Usage Overview
-1) Import Data
-File → Import… (multi-select) or drag & drop into the file list.
+* The Axis Mapping dialog appears:
 
-The Axis Mapping dialog appears:
+  * Pick X and Y from detected headers (e.g., Field (Oe) vs Moment (emu)).
 
-Pick X and Y from detected headers (e.g., Field (Oe) vs Moment (emu)).
+  * Set units (Oe/T, emu, emu/g, emu/cm³, A/m), scale (linear/log), and axis ranges.
 
-Set units (Oe/T, emu, emu/g, emu/cm³, A/m), scale (linear/log), and axis ranges.
+  * Save as default mapping for that vendor format.
 
-Save as default mapping for that vendor format.
+## 2) Plotting
+* Choose Superimposed or Side-by-Side in the toolbar.
 
-2) Plotting
-Choose Superimposed or Side-by-Side in the toolbar.
+* Adjust styles (line/marker/width), toggle legends/grid/ticks.
 
-Adjust styles (line/marker/width), toggle legends/grid/ticks.
+* Zoom/pan with the embedded toolbar; right‑click to reset view.
 
-Zoom/pan with the embedded toolbar; right‑click to reset view.
+## 3) Analysis
+* Ms: Select a high-field window; choose Linear Extrapolation or Plateau.
 
-3) Analysis
-Ms: Select a high-field window; choose Linear Extrapolation or Plateau.
+  * If units require volume/mass: a guided prompt asks for mass (g), density (g/cm³), dimensions, or thickness & area (for films).
 
-If units require volume/mass: a guided prompt asks for mass (g), density (g/cm³), dimensions, or thickness & area (for films).
+* Hc: The app finds M=0 crossings on both branches; view values and confidence.
 
-Hc: The app finds M=0 crossings on both branches; view values and confidence.
+* Mr: Intercept at H=0 with optional spline interpolation.
 
-Mr: Intercept at H=0 with optional spline interpolation.
+* Ku (Sucksmith–Thompson): The app builds M/H vs M², fits a line, derives Ku.
 
-Ku (Sucksmith–Thompson): The app builds M/H vs M², fits a line, derives Ku.
+  * Prompts for demag correction and geometry (thin film, rod, sphere); optional angle.
 
-Prompts for demag correction and geometry (thin film, rod, sphere); optional angle.
+* Paramagnetic subtraction: Select a high-field range; fit M = χ·H + b (or Langevin).
 
-Paramagnetic subtraction: Select a high-field range; fit M = χ·H + b (or Langevin).
+  * Preview subtraction; export residuals and fit parameters.
 
-Preview subtraction; export residuals and fit parameters.
+* Batch mode: Apply chosen operations to all selected files and export a summary table.
 
-Batch mode: Apply chosen operations to all selected files and export a summary table.
+## 4) Export
+* Plots: PNG/SVG/PDF with DPI and size controls; journal presets (PRB, APL, etc.).
 
-4) Export
-Plots: PNG/SVG/PDF with DPI and size controls; journal presets (PRB, APL, etc.).
+* Data: CSV of processed curves; JSON with fit parameters & uncertainties.
 
-Data: CSV of processed curves; JSON with fit parameters & uncertainties.
+* Reports: One-click PDF/Markdown including figures, tables, and method notes.
 
-Reports: One-click PDF/Markdown including figures, tables, and method notes.
+# Algorithms & Assumptions (Brief)
+* Hc: Linear/spline interpolation between nearest sign-change points on each branch; optional detrend/smoothing (Savitzky–Golay).
 
-Algorithms & Assumptions (Brief)
-Hc: Linear/spline interpolation between nearest sign-change points on each branch; optional detrend/smoothing (Savitzky–Golay).
+* Mr: Evaluate M at H=0 using spline/linear interpolation of nearest points.
 
-Mr: Evaluate M at H=0 using spline/linear interpolation of nearest points.
+* Ms:
 
-Ms:
+  * Linear high-field extrapolation of M(H) to infinite field; slope gives χ, intercept → Ms.
 
-Linear high-field extrapolation of M(H) to infinite field; slope gives χ, intercept → Ms.
+  * Plateau averaging over user-defined top/bottom field windows.
 
-Plateau averaging over user-defined top/bottom field windows.
+* Ku (Sucksmith–Thompson): Fit of M/H vs M² yields slope/intercept related to Ku (details in in-app docs). Demag corrections applied if geometry provided.
 
-Ku (Sucksmith–Thompson): Fit of M/H vs M² yields slope/intercept related to Ku (details in in-app docs). Demag corrections applied if geometry provided.
-
-Paramag subtraction: Fit in |H| ≥ H_min region for χ (and b); subtract χ·H (+b) from full curve. Optional Langevin/Brillouin model for SP-MNPs.
+* Paramag subtraction: Fit in |H| ≥ H_min region for χ (and b); subtract χ·H (+b) from full curve. Optional Langevin/Brillouin model for SP-MNPs.
 
 Each result includes fit ranges, R²/χ², confidence intervals when available.
 
-Configuration
-Settings file: ~/.vsm-gui/config.yaml
+# Configuration
+## Settings file: ~/.vsm-gui/config.yaml
 
-Default plot theme, fonts, journal presets
+* Default plot theme, fonts, journal presets
 
-Default unit system (SI/CGS)
+* Default unit system (SI/CGS)
 
-Vendor header mappings
+* Vendor header mappings
 
-Project file: .vsmproj (JSON) stores:
+## Project file: .vsmproj (JSON) stores:
 
-File paths (relative), axis choices, unit preferences
+* File paths (relative), axis choices, unit preferences
 
-Plot styles and layouts
+* Plot styles and layouts
 
-Analysis steps, fit windows, results, and notes
+* Analysis steps, fit windows, results, and notes
 
-Extensibility
-Parsers: Implement file_io/parsers/base.py interface and register entry point.
+# Extensibility
+* Parsers: Implement file_io/parsers/base.py interface and register entry point.
 
-Analyses: Add a function under analysis/ returning values + uncertainties (+ metadata) and register with the Analysis panel.
+* Analyses: Add a function under analysis/ returning values + uncertainties (+ metadata) and register with the Analysis panel.
 
-Themes: Add plot style profiles under plotting/themes.py.
+* Themes: Add plot style profiles under plotting/themes.py.
 
 
-Testing
+# Testing
 Run unit tests:
 
 bash:
+```
 pytest -q
+```
 Suggested fixtures in examples/data/:
 
-Symmetric loop with known Ms/Hc/Mr
+* Symmetric loop with known Ms/Hc/Mr
 
-Anisotropy dataset for Sucksmith–Thompson validation
+* Anisotropy dataset for Sucksmith–Thompson validation
 
-High-field segment for paramag subtraction tests
+* High-field segment for paramag subtraction tests
 
-Roadmap
-ROI tools for partial-loop analysis (first quadrant, FORC preparation)
+# Roadmap
+* ROI tools for partial-loop analysis (first quadrant, FORC preparation)
 
-Temperature-dependent M(T) analysis with Curie/Blocking fits
+* Temperature-dependent M(T) analysis with Curie/Blocking fits
 
-Angle-dependent anisotropy workflows
+* Angle-dependent anisotropy workflows
 
-Column math (normalize by mass/volume/film area)
+* Column math (normalize by mass/volume/film area)
 
-Live LaTeX labels in plots
+* Live LaTeX labels in plots
 
-SQUID/VSM mixed-mode parser plugins
+* SQUID/VSM mixed-mode parser plugins
 
-Command-line batch pipeline (headless)
+* Command-line batch pipeline (headless)
 
-Contributing
+# Contributing
 PRs welcome! Please:
 
-Open an issue describing the feature/bug.
+1) Open an issue describing the feature/bug.
 
-Add tests and docs.
+2) Add tests and docs.
 
-Follow the existing code style.
+3) Follow the existing code style.
 
+# License
+MIT
 
-Citation
+# Citation
 If this tool contributes to a publication, please cite the repository (CITATION.cff to be added).
 
-A Note on Units
+# A Note on Units
 The app uses SI internally via pint. Inputs in CGS (emu, Oe) are accepted and converted with explicit prompts. Users will be guided to supply either mass & density or geometric dimensions to compute volume/mass‑normalized quantities.
+
+# Quick Start (Developer)
+
+bash:
+```
+git clone <your-repo-url> vsm-gui
+cd vsm-gui
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+python -m vsm_gui
+```
+Open File → Import…, select multiple CSVs, choose Field (Oe) as X and Moment (emu) as Y, switch to Superimposed, then open Analysis to compute Ms/Hc/Mr. Try Paramagnetic Subtraction on a high-field window and export the plot as PDF and the results table as CSV.
