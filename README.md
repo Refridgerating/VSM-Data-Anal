@@ -4,6 +4,15 @@ A GUI-based toolkit for importing, visualizing, and analyzing Vibrating Sample M
 Status: Initial spec & scaffolding for Codex/agent-driven implementation.
 Target audience: Experimentalists working with VSM hysteresis and M(H/T) data.
 
+## Quick workflow
+
+1. **Load data** – choose one or more CSV files via *File → Open*.
+2. **Pick axes** – select the X and Y columns once; the choice is reused for every file.
+3. **Toggle layout** – switch between *Superimposed* and *Side-by-Side* views from the *View → Layout* menu.
+4. **Inspect** – compare curves, zoom and pan, then export figures as needed.
+
+This sequence makes for a concise, GIF-worthy demonstration of the plotting interface.
+
 Key Features
 GUI-first workflow
 
