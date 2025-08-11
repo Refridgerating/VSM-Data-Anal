@@ -1,0 +1,4 @@
+PyQt6>=6.0
+matplotlib
+pandas
+numpy
