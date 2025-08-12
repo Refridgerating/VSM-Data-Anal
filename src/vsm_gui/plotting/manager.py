@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict, Tuple
+from typing import Dict, Tuple, List
 
 import matplotlib
 import pandas as pd
@@ -18,6 +18,8 @@ class PlotManager:
         cycle = matplotlib.rcParams["axes.prop_cycle"].by_key()
         self._colors = cycle.get("color", [])
         self._index = 0
+        self._x_name: str | None = None
+        self._y_name: str | None = None
 
     def _next_color(self) -> str | None:
         if not self._colors:
@@ -40,7 +42,20 @@ class PlotManager:
 
     def set_labels(self, xlabel: str, ylabel: str) -> None:
         """Set axes labels."""
+        self._x_name = xlabel
+        self._y_name = ylabel
         self.pane.set_labels(xlabel, ylabel)
+
+    def get_axis_names(self) -> tuple[str | None, str | None]:
+        """Return currently active axis names."""
+        return self._x_name, self._y_name
+
+    def get_datasets(self) -> List[dict]:
+        """Return list of datasets with labels and dataframes."""
+        items: List[dict] = []
+        for label, (df, _x, _y) in self.datasets.items():
+            items.append({"label": label, "df": df})
+        return items
 
     def export_png(self, path: Path) -> None:
         """Export the current figure as a PNG file."""
