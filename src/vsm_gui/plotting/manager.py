@@ -16,7 +16,11 @@ class PlotManager:
 
     def __init__(self, pane: PlotPane) -> None:
         self.pane = pane
-        self.datasets: Dict[str, pd.DataFrame] = {}
+        # Mapping of label -> (dataframe, x column, y column)
+        self.datasets: Dict[str, Tuple[pd.DataFrame, str, str]] = {}
+        # Track which original label has an associated corrected curve
+        self.corrected_map: Dict[str, str] = {}
+
         cycle = matplotlib.rcParams["axes.prop_cycle"].by_key()
         self._colors = cycle.get("color", [])
         self._index = 0
@@ -33,6 +37,7 @@ class PlotManager:
     def clear(self) -> None:
         """Clear all datasets and reset the plot."""
         self.datasets.clear()
+        self.corrected_map.clear()
         self._index = 0
         self.pane.clear()
 
@@ -92,6 +97,43 @@ def replot_all(self) -> List[str]:
     def get_axis_names(self) -> tuple[str | None, str | None]:
         """Return currently active axis names."""
         return self._x_name, self._y_name
+
+    # ------------------------------------------------------------------
+    # Corrected data handling
+    # ------------------------------------------------------------------
+    def add_corrected(
+        self, label: str, df_corr: pd.DataFrame, x_name: str, y_corr_name: str
+    ) -> None:
+        """Add a corrected dataset to the plot."""
+        corrected_label = f"{label} (corrected)"
+        if corrected_label in self.datasets:
+            # Replace existing corrected dataset
+            self.remove_corrected(label)
+        self.datasets[corrected_label] = (df_corr, x_name, y_corr_name)
+        self.corrected_map[label] = corrected_label
+        color = self._next_color()
+        self.pane.plot_dataframe(df_corr, x_name, y_corr_name, corrected_label, color=color)
+
+    def remove_corrected(self, label: str) -> None:
+        """Remove a corrected dataset associated with ``label``."""
+        corrected_label = self.corrected_map.pop(label, None)
+        if corrected_label and corrected_label in self.datasets:
+            del self.datasets[corrected_label]
+            self._replot_all()
+
+    # Internal utilities -------------------------------------------------
+    def _replot_all(self) -> None:
+        """Replot all datasets, used after removing a curve."""
+        self.pane.clear()
+        self._index = 0
+        for lbl, (df, x, y) in self.datasets.items():
+            color = self._next_color()
+            self.pane.plot_dataframe(df, x, y, lbl, color=color)
+
+    # Back-compat label setter; route to canonical axis-name setter
+    def set_labels(self, xlabel: str, ylabel: str) -> None:
+        """Backward-compatible wrapper: also updates stored axis names."""
+        self.set_axis_names(xlabel, ylabel)
 
     def get_datasets(self) -> List[dict]:
         """Return list of datasets with labels and dataframes."""

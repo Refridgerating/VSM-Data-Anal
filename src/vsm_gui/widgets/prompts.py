@@ -1,32 +1,110 @@
+# widgets/prompts.py
+
 from __future__ import annotations
 
-from PyQt6.QtWidgets import QInputDialog, QWidget
+# Imports merged from both sides
+from PyQt6.QtWidgets import (
+    QDialog,
+    QDialogButtonBox,
+    QDoubleSpinBox,
+    QFormLayout,
+    QInputDialog,
+    QWidget,
+)
+
+# ---- High-field window prompt ----
+TITLE = "High-field Window"
+LABEL_HMIN = "H min"
+LABEL_HMAX = "H max"
 
 
+class FieldWindowDialog(QDialog):
+    """Dialog to input a magnetic-field window."""
+
+    def __init__(
+        self,
+        hmin: float | None = None,
+        hmax: float | None = None,
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.setWindowTitle(TITLE)
+
+        self._hmin = QDoubleSpinBox()
+        self._hmax = QDoubleSpinBox()
+        for box in (self._hmin, self._hmax):
+            box.setRange(-1e9, 1e9)
+            box.setDecimals(6)
+        if hmin is not None:
+            self._hmin.setValue(hmin)
+        if hmax is not None:
+            self._hmax.setValue(hmax)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+
+        layout = QFormLayout(self)
+        layout.addRow(LABEL_HMIN, self._hmin)
+        layout.addRow(LABEL_HMAX, self._hmax)
+        layout.addWidget(buttons)
+
+    def values(self) -> tuple[float, float]:
+        return self._hmin.value(), self._hmax.value()
+
+
+def prompt_field_window(
+    parent: QWidget | None = None,
+    hmin: float | None = None,
+    hmax: float | None = None,
+) -> tuple[float, float] | None:
+    """Prompt the user to enter a high-field window.
+
+    Returns None if the dialog is cancelled.
+    """
+    dialog = FieldWindowDialog(hmin, hmax, parent)
+    if dialog.exec() == QDialog.DialogCode.Accepted:
+        return dialog.values()
+    return None
+
+
+# ---- Sample parameters prompt (unit conversion helpers) ----
 def sample_parameters(parent: QWidget) -> dict | None:
     """Collect optional sample parameters for unit conversion.
 
-    Returns ``None`` if the user cancels any prompt.
+    Returns None if the user cancels any prompt.
     """
     params: dict[str, float] = {}
-    mass, ok = QInputDialog.getDouble(parent, "Sample Mass", "Mass (kg)", 0.0, 0.0, 1e9, 6)
+
+    mass, ok = QInputDialog.getDouble(
+        parent, "Sample Mass", "Mass (kg)", 0.0, 0.0, 1e9, 6
+    )
     if not ok:
         return None
     params["mass"] = mass
 
-    density, ok = QInputDialog.getDouble(parent, "Sample Density", "Density (kg/m^3)", 0.0, 0.0, 1e9, 6)
+    density, ok = QInputDialog.getDouble(
+        parent, "Sample Density", "Density (kg/m^3)", 0.0, 0.0, 1e9, 6
+    )
     if not ok:
         return None
     params["density"] = density
 
-    thickness, ok = QInputDialog.getDouble(parent, "Sample Thickness", "Thickness (m)", 0.0, 0.0, 1e9, 6)
+    thickness, ok = QInputDialog.getDouble(
+        parent, "Sample Thickness", "Thickness (m)", 0.0, 0.0, 1e9, 6
+    )
     if not ok:
         return None
     params["thickness"] = thickness
 
-    area, ok = QInputDialog.getDouble(parent, "Sample Area", "Area (m^2)", 0.0, 0.0, 1e9, 6)
+    area, ok = QInputDialog.getDouble(
+        parent, "Sample Area", "Area (m^2)", 0.0, 0.0, 1e9, 6
+    )
     if not ok:
         return None
     params["area"] = area
 
     return params
+
