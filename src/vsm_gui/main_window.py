@@ -59,14 +59,24 @@ class MainWindow(QMainWindow):
     def _init_toolbar(self) -> None:
         grid = QAction("Grid", self)
         grid.setCheckable(True)
+        grid.setChecked(True)
         grid.triggered.connect(self.pane.toggle_grid)
         self.navbar.addAction(grid)
+
+        minor = QAction("Minor Ticks", self)
+        minor.setCheckable(True)
+        minor.setChecked(True)
+        minor.triggered.connect(self.pane.toggle_minor_ticks)
+        self.navbar.addAction(minor)
 
         legend = QAction("Legend", self)
         legend.setCheckable(True)
         legend.setChecked(True)
-        legend.triggered.connect(self.pane.show_legend)
+        legend.triggered.connect(self.pane.toggle_legend)
         self.navbar.addAction(legend)
+
+        self._grid_action = grid
+        self._minor_action = minor
         self._legend_action = legend
 
     def _init_menu(self) -> None:
@@ -85,6 +95,10 @@ class MainWindow(QMainWindow):
         reset_act = QAction(RESET_TEXT, self)
         reset_act.triggered.connect(self.manager.reset_view)
         view_menu.addAction(reset_act)
+        view_menu.addSeparator()
+        view_menu.addAction(self._grid_action)
+        view_menu.addAction(self._minor_action)
+        view_menu.addAction(self._legend_action)
 
         help_menu = menu.addMenu("Help")
         about_act = QAction(ABOUT_TEXT, self)
@@ -133,8 +147,7 @@ class MainWindow(QMainWindow):
                 self.manager.add(path.stem, df, x_col, y_col)
 
             self.manager.set_labels(x_col, y_col)
-            self.pane.show_legend(True)
-            self._legend_action.setChecked(True)
+            self.pane.toggle_legend(self._legend_action.isChecked())
         except Exception as exc:  # noqa: BLE001
             logger.exception("Failed to open files")
             QMessageBox.critical(self, "Error", str(exc))
