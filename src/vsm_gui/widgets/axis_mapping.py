@@ -6,6 +6,7 @@ from PyQt6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QFormLayout,
+    QLabel,
     QWidget,
 )
 
@@ -43,9 +44,13 @@ class AxisMappingDialog(QDialog):
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
 
+        note = QLabel("Files missing the selected columns will be skipped.")
+        note.setWordWrap(True)
+
         layout = QFormLayout(self)
         layout.addRow(LABEL_X, self._x_combo)
         layout.addRow(LABEL_Y, self._y_combo)
+        layout.addRow(note)
         layout.addWidget(buttons)
 
     def get_mapping(self) -> tuple[str, str]:
