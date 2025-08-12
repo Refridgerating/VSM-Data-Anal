@@ -63,14 +63,24 @@ class MainWindow(QMainWindow):
     def _init_toolbar(self) -> None:
         grid = QAction("Grid", self)
         grid.setCheckable(True)
+        grid.setChecked(True)
         grid.triggered.connect(self.pane.toggle_grid)
         self.navbar.addAction(grid)
+
+        minor = QAction("Minor Ticks", self)
+        minor.setCheckable(True)
+        minor.setChecked(True)
+        minor.triggered.connect(self.pane.toggle_minor_ticks)
+        self.navbar.addAction(minor)
 
         legend = QAction("Legend", self)
         legend.setCheckable(True)
         legend.setChecked(True)
-        legend.triggered.connect(self.pane.show_legend)
+        legend.triggered.connect(self.pane.toggle_legend)
         self.navbar.addAction(legend)
+
+        self._grid_action = grid
+        self._minor_action = minor
         self._legend_action = legend
 
     def _init_menu(self) -> None:
@@ -89,6 +99,10 @@ class MainWindow(QMainWindow):
         reset_act = QAction(RESET_TEXT, self)
         reset_act.triggered.connect(self.manager.reset_view)
         view_menu.addAction(reset_act)
+        view_menu.addSeparator()
+        view_menu.addAction(self._grid_action)
+        view_menu.addAction(self._minor_action)
+        view_menu.addAction(self._legend_action)
 
         change_axes_act = QAction("Change Axes…", self)
         change_axes_act.setShortcut("Ctrl+Shift+X")
@@ -138,16 +152,23 @@ class MainWindow(QMainWindow):
 
             self.manager.set_axis_names(x_col, y_col)
             skipped = self.manager.replot_all()
-            self.pane.show_legend(True)
+
+            # Ensure legend is visible and UI state matches
             self._legend_action.setChecked(True)
+            if hasattr(self.pane, "toggle_legend"):
+                self.pane.toggle_legend(True)
+            else:
+                # Backward-compat if an earlier task created show_legend()
+                self.pane.show_legend(True)
 
             if skipped:
                 msg = QMessageBox(self)
                 msg.setWindowTitle("Skipped Files")
                 msg.setText("Some files were skipped:\n" + "\n".join(skipped))
                 msg.setIcon(QMessageBox.Icon.Warning)
-                msg.setModal(False)
+                msg.setModal(False)  # non-blocking
                 msg.show()
+
         except Exception as exc:  # noqa: BLE001
             logger.exception("Failed to open files")
             QMessageBox.critical(self, "Error", str(exc))
