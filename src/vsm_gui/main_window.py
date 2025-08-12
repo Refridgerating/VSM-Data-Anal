@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
-from PyQt6.QtCore import QUrl
+from PyQt6.QtCore import QUrl, Qt
 from PyQt6.QtGui import QAction, QDesktopServices
 from PyQt6.QtWidgets import (
     QDialog,
@@ -22,6 +22,7 @@ from .utils.logging import LOG_FILE, logger
 from .widgets.axis_mapping import AxisMappingDialog
 from .widgets.file_picker import pick_csv_files
 from .widgets.plot_pane import PlotPane
+from .widgets.analysis_panel import AnalysisDock
 
 WINDOW_TITLE = "VSM Data Viewer"
 OPEN_TEXT = "Open…"
@@ -52,6 +53,9 @@ class MainWindow(QMainWindow):
         self.navbar = NavigationToolbar(self.pane, self)
         layout.addWidget(self.navbar)
         self.setCentralWidget(central)
+
+        self.analysis_dock = AnalysisDock(self.manager, self)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.analysis_dock)
 
         self._init_toolbar()
         self._init_menu()
