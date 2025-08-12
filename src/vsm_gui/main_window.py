@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
-from PyQt6.QtCore import QUrl
+from PyQt6.QtCore import QUrl, Qt
 from PyQt6.QtGui import QAction, QDesktopServices
 from PyQt6.QtWidgets import (
     QDialog,
@@ -22,6 +22,7 @@ from .utils.logging import LOG_FILE, logger
 from .widgets.axis_mapping import AxisMappingDialog
 from .widgets.file_picker import pick_csv_files
 from .widgets.plot_pane import PlotPane
+from .widgets.analysis_panel import AnalysisDock
 
 WINDOW_TITLE = "VSM Data Viewer"
 OPEN_TEXT = "Open…"
@@ -52,6 +53,9 @@ class MainWindow(QMainWindow):
         self.navbar = NavigationToolbar(self.pane, self)
         layout.addWidget(self.navbar)
         self.setCentralWidget(central)
+
+        self.analysis_dock = AnalysisDock(self.manager, self)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.analysis_dock)
 
         self._init_toolbar()
         self._init_menu()
@@ -100,6 +104,11 @@ class MainWindow(QMainWindow):
         view_menu.addAction(self._minor_action)
         view_menu.addAction(self._legend_action)
 
+        change_axes_act = QAction("Change Axes…", self)
+        change_axes_act.setShortcut("Ctrl+Shift+X")
+        change_axes_act.triggered.connect(self.change_axes)
+        view_menu.addAction(change_axes_act)
+
         help_menu = menu.addMenu("Help")
         about_act = QAction(ABOUT_TEXT, self)
         about_act.triggered.connect(self.show_about)
@@ -128,8 +137,10 @@ class MainWindow(QMainWindow):
             if not dataframes:
                 return
 
-            headers = list(dataframes[0].columns)
-            dialog = AxisMappingDialog(headers, self._last_x, self._last_y, self)
+            headers: set[str] = set()
+            for df in dataframes:
+                headers.update(df.columns)
+            dialog = AxisMappingDialog(sorted(headers), self._last_x, self._last_y, self)
             if dialog.exec() != QDialog.DialogCode.Accepted:
                 return
             x_col, y_col = dialog.get_mapping()
@@ -137,20 +148,53 @@ class MainWindow(QMainWindow):
 
             self.manager.clear()
             for df, path in zip(dataframes, valid_paths):
-                if x_col not in df.columns or y_col not in df.columns:
-                    errors.show_error(
-                        self,
-                        f"{path.name} missing column '{x_col}' or '{y_col}'",
-                        title="Missing Column",
-                    )
-                    continue
-                self.manager.add(path.stem, df, x_col, y_col)
+                self.manager.add(path.stem, df)
 
-            self.manager.set_labels(x_col, y_col)
-            self.pane.toggle_legend(self._legend_action.isChecked())
+            self.manager.set_axis_names(x_col, y_col)
+            skipped = self.manager.replot_all()
+
+            # Ensure legend is visible and UI state matches
+            self._legend_action.setChecked(True)
+            if hasattr(self.pane, "toggle_legend"):
+                self.pane.toggle_legend(True)
+            else:
+                # Backward-compat if an earlier task created show_legend()
+                self.pane.show_legend(True)
+
+            if skipped:
+                msg = QMessageBox(self)
+                msg.setWindowTitle("Skipped Files")
+                msg.setText("Some files were skipped:\n" + "\n".join(skipped))
+                msg.setIcon(QMessageBox.Icon.Warning)
+                msg.setModal(False)  # non-blocking
+                msg.show()
+
         except Exception as exc:  # noqa: BLE001
             logger.exception("Failed to open files")
             QMessageBox.critical(self, "Error", str(exc))
+
+    def change_axes(self) -> None:
+        if not self.manager.datasets:
+            return
+        headers: set[str] = set()
+        for df in self.manager.datasets.values():
+            headers.update(df.columns)
+        dialog = AxisMappingDialog(sorted(headers), self._last_x, self._last_y, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        x_col, y_col = dialog.get_mapping()
+        self._last_x, self._last_y = x_col, y_col
+        self.manager.set_axis_names(x_col, y_col)
+        skipped = self.manager.replot_all()
+        self.pane.show_legend(True)
+        self._legend_action.setChecked(True)
+        if skipped:
+            msg = QMessageBox(self)
+            msg.setWindowTitle("Skipped Files")
+            msg.setText("Some files were skipped:\n" + "\n".join(skipped))
+            msg.setIcon(QMessageBox.Icon.Warning)
+            msg.setModal(False)
+            msg.show()
 
     def export_plot(self) -> None:
         path_str, _ = QFileDialog.getSaveFileName(self, EXPORT_TEXT, "", PNG_FILTER)

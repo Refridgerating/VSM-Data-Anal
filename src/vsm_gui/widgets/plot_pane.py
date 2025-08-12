@@ -62,11 +62,15 @@ class PlotPane(FigureCanvasQTAgg):
         """Export the current figure to a PNG file."""
         self.figure.savefig(path, format="png", dpi=150)
 
-    def reset_view(self) -> None:
+    def autoscale(self) -> None:
         """Autoscale the axes and redraw."""
         self.axes.relim()
         self.axes.autoscale()
         self.draw_idle()
+
+    def reset_view(self) -> None:
+        """Reset the view to show all data."""
+        self.autoscale()
 
     def toggle_grid(self, enabled: bool) -> None:
         """Toggle the grid visibility."""
