@@ -18,8 +18,8 @@ class PlotManager:
         self.pane = pane
         # Mapping of label -> Dataset
         self.datasets: Dict[str, Dataset] = {}
-        # Track which original label has an associated corrected curve
-        self.corrected_map: Dict[str, str] = {}
+        # Cache of original datasets for temporary modifications
+        self._original_cache: Dict[str, Dataset] = {}
 
         cycle = matplotlib.rcParams["axes.prop_cycle"].by_key()
         self._colors = cycle.get("color", [])
@@ -37,7 +37,7 @@ class PlotManager:
     def clear(self) -> None:
         """Clear all datasets and reset the plot."""
         self.datasets.clear()
-        self.corrected_map.clear()
+        self._original_cache.clear()
         self._index = 0
         self.pane.clear()
 
@@ -144,29 +144,37 @@ class PlotManager:
     # ------------------------------------------------------------------
     # Corrected data handling
     # ------------------------------------------------------------------
-    def add_corrected(
+    def replace_dataset(
         self, label: str, df_corr: pd.DataFrame, x_name: str, y_corr_name: str
     ) -> None:
-        """Add a corrected dataset to the plot."""
-        corrected_label = f"{label} (corrected)"
-        if corrected_label in self.datasets:
-            # Replace existing corrected dataset
-            self.remove_corrected(label)
-        self.datasets[corrected_label] = Dataset(
-            corrected_label, df_corr, x_name=x_name, y_name=y_corr_name
-        )
-        self.corrected_map[label] = corrected_label
-        color = self._next_color()
-        self.pane.plot_dataframe(
-            df_corr, x_name, y_corr_name, corrected_label, color=color
-        )
+        """Replace the dataset *label* with corrected data.
 
-    def remove_corrected(self, label: str) -> None:
-        """Remove a corrected dataset associated with ``label``."""
-        corrected_label = self.corrected_map.pop(label, None)
-        if corrected_label and corrected_label in self.datasets:
-            del self.datasets[corrected_label]
+        The original dataset is cached so that it can be restored via
+        :meth:`revert_dataset` later in the session.
+        """
+        if label not in self.datasets:
+            raise ValueError(f"Unknown dataset label: {label}")
+
+        # Cache original before replacing
+        if label not in self._original_cache:
+            self._original_cache[label] = self.datasets[label]
+
+        # Overwrite dataset with corrected version
+        self.datasets[label] = Dataset(
+            label, df_corr, x_name=x_name, y_name=y_corr_name
+        )
+        self._replot_all()
+
+    def revert_dataset(self, label: str) -> None:
+        """Restore the original dataset for *label* if a corrected one exists."""
+        original = self._original_cache.pop(label, None)
+        if original is not None:
+            self.datasets[label] = original
             self._replot_all()
+
+    def is_corrected(self, label: str) -> bool:
+        """Return ``True`` if *label* currently refers to a corrected dataset."""
+        return label in self._original_cache
 
     # Internal utilities -------------------------------------------------
     def _replot_all(self) -> None:

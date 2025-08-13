@@ -324,12 +324,8 @@ class AnalysisDock(QDockWidget):
         return parse(self.hmin_edit), parse(self.hmax_edit)
 
     def _selected_labels(self) -> list[str]:
-        # Operate on all original datasets (skip already-corrected labels)
-        return [
-            lbl
-            for lbl in self.manager.datasets.keys()
-            if lbl not in self.manager.corrected_map.values()
-        ]
+        # Operate on all datasets; filtering occurs where needed
+        return list(self.manager.datasets.keys())
 
     def _clear_fit_lines(self) -> None:
         for line in self._fit_lines:
@@ -349,6 +345,8 @@ class AnalysisDock(QDockWidget):
         self._fit_results.clear()
 
         for label in self._selected_labels():
+            if self.manager.is_corrected(label):
+                continue
             try:
                 df, x_name, y_name = self.manager.get_dataset_tuple(label)
             except ValueError:
@@ -457,12 +455,12 @@ class AnalysisDock(QDockWidget):
             df_corr = paramag.apply_subtraction(
                 df, x_name, y_name, result["chi"]
             )
-            self.manager.add_corrected(label, df_corr, x_name, y_name + "_corr")
+            self.manager.replace_dataset(label, df_corr, x_name, y_name + "_corr")
 
     def revert(self) -> None:
         for label in self._selected_labels():
-            if label in self.manager.corrected_map:
-                self.manager.remove_corrected(label)
+            if self.manager.is_corrected(label):
+                self.manager.revert_dataset(label)
         self._clear_fit_lines()
         if hasattr(self.manager.pane, "clear_regions"):
             self.manager.pane.clear_regions()
