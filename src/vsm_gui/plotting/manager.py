@@ -4,10 +4,11 @@ import matplotlib
 import numpy as np
 import pandas as pd
 
+from ..model import Dataset
 from ..widgets.plot_pane import PlotPane
 
 from pathlib import Path
-from typing import Dict, List, Tuple, Union
+from typing import Dict, List
 
 
 class PlotManager:
@@ -15,10 +16,8 @@ class PlotManager:
 
     def __init__(self, pane: PlotPane) -> None:
         self.pane = pane
-        # Mapping of label -> dataframe or (df, x_name, y_name)
-        self.datasets: Dict[
-            str, Union[pd.DataFrame, Tuple[pd.DataFrame, str, str]]
-        ] = {}
+        # Mapping of label -> Dataset
+        self.datasets: Dict[str, Dataset] = {}
         # Track which original label has an associated corrected curve
         self.corrected_map: Dict[str, str] = {}
 
@@ -44,7 +43,11 @@ class PlotManager:
 
     def add(self, label: str, df: pd.DataFrame) -> None:
         """Store a dataframe for plotting."""
-        self.datasets[label] = df
+        self.datasets[label] = Dataset(label, df)
+
+    def add_dataset(self, dataset: Dataset) -> None:
+        """Add a pre-built Dataset object."""
+        self.datasets[dataset.label] = dataset
 
     def set_axis_names(self, x_name: str, y_name: str) -> None:
         """Record the axis column names to use for plotting and update labels."""
@@ -67,28 +70,18 @@ class PlotManager:
         if self._x_name is None or self._y_name is None:
             return skipped
 
-        for label, data in self.datasets.items():
-            if isinstance(data, tuple):
-                df, x_col, y_col = data
-            else:
-                df = data
-                x_col = self._x_name
-                y_col = self._y_name
+        for label, ds in self.datasets.items():
+            x_col = ds.x_name or self._x_name
+            y_col = ds.y_name or self._y_name
             if x_col is None or y_col is None:
                 continue
-            if x_col not in df.columns or y_col not in df.columns:
+            try:
+                clean = ds.select_xy(x_col, y_col)
+            except KeyError:
                 skipped.append(
                     f"{label}: missing column '{x_col}' or '{y_col}'"
                 )
                 continue
-
-            x = pd.to_numeric(df[x_col], errors="coerce")
-            y = pd.to_numeric(df[y_col], errors="coerce")
-            clean = (
-                pd.DataFrame({x_col: x, y_col: y})
-                .replace([np.inf, -np.inf], pd.NA)
-                .dropna()
-            )
             if len(clean) < 2:
                 skipped.append(f"{label}: not enough valid data")
                 continue
@@ -114,7 +107,9 @@ class PlotManager:
         if corrected_label in self.datasets:
             # Replace existing corrected dataset
             self.remove_corrected(label)
-        self.datasets[corrected_label] = (df_corr, x_name, y_corr_name)
+        self.datasets[corrected_label] = Dataset(
+            corrected_label, df_corr, x_name=x_name, y_name=y_corr_name
+        )
         self.corrected_map[label] = corrected_label
         color = self._next_color()
         self.pane.plot_dataframe(
@@ -133,24 +128,19 @@ class PlotManager:
         """Replot all datasets, used after removing a curve."""
         self.pane.clear()
         self._index = 0
-        for lbl, data in self.datasets.items():
-            if isinstance(data, tuple):
-                df, x_col, y_col = data
-            else:
-                df = data
-                x_col = self._x_name
-                y_col = self._y_name
+        for lbl, ds in self.datasets.items():
+            x_col = ds.x_name or self._x_name
+            y_col = ds.y_name or self._y_name
             if x_col is None or y_col is None:
                 continue
             color = self._next_color()
-            self.pane.plot_dataframe(df, x_col, y_col, lbl, color=color)
+            self.pane.plot_dataframe(ds.df, x_col, y_col, lbl, color=color)
 
     def get_datasets(self) -> List[dict]:
         """Return list of datasets with labels and dataframes."""
         items: List[dict] = []
-        for label, data in self.datasets.items():
-            df = data[0] if isinstance(data, tuple) else data
-            items.append({"label": label, "df": df})
+        for label, ds in self.datasets.items():
+            items.append({"label": label, "df": ds.df})
         return items
 
     def export_png(self, path: Path) -> None:
