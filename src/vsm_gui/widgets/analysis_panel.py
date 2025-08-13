@@ -97,6 +97,12 @@ class AnalysisDock(QDockWidget):
         paramag_group = QGroupBox("Paramagnetic subtraction", corrections)
         form = QFormLayout(paramag_group)
 
+        info = QLabel(
+            "Subtract χ·H (slope only). Intercept b is shown for diagnostics."
+        )
+        info.setWordWrap(True)
+        form.addRow(info)
+
         self.hmin_edit = QLineEdit()
         self.hmax_edit = QLineEdit()
         tip = (

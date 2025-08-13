@@ -126,11 +126,30 @@ def detect_linear_tail(
 def apply_subtraction(
     df: pd.DataFrame, x_name: str, y_name: str, chi: float, b: float
 ) -> pd.DataFrame:
-    """Subtract chi*H + b from the dataset.
+    """Subtract ``chi*H`` from the dataset, preserving the intercept ``b``.
 
-    Returns a copy of ``df`` with a new column ``y_name + '_corr'``.
+    The linear fit ``M ≈ chi*H + b`` is still reported to the caller, but only
+    the slope term is removed from the data so that any ferromagnetic content
+    (e.g. remanent magnetization) remains unchanged.  A copy of ``df`` is
+    returned with a new column ``y_name + '_corr'`` holding the corrected
+    values.
+
+    Parameters
+    ----------
+    df : DataFrame
+        Input data containing ``x_name`` and ``y_name`` columns.
+    x_name, y_name : str
+        Column names for the field ``H`` and magnetization ``M``.
+    chi : float
+        Fitted paramagnetic susceptibility.
+    b : float
+        Intercept from the fit.  Kept for diagnostic purposes and not used in
+        the subtraction.
     """
+
     df_corr = df.copy()
     y_corr = y_name + "_corr"
-    df_corr[y_corr] = df_corr[y_name] - (chi * df_corr[x_name] + b)
+    # Subtract only the slope term; leave the intercept untouched so that
+    # vertical positioning (e.g. Mr, Ms) is preserved.
+    df_corr[y_corr] = df_corr[y_name] - chi * df_corr[x_name]
     return df_corr
