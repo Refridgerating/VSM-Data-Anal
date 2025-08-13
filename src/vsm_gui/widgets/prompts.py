@@ -95,7 +95,7 @@ def confirm_fit_window(
     hmin: float,
     hmax: float,
     stats: Mapping[str, float],
-) -> tuple[Literal["auto", "manual", "cancel"], tuple[float, float] | None]:
+) -> Literal["auto", "manual", "cancel"]:
     """Confirm use of an auto-detected field window with fit statistics."""
 
     box = QMessageBox(parent)
@@ -103,21 +103,21 @@ def confirm_fit_window(
     box.setText(
         "A high-field linear region was detected automatically.\n"
         f"Hmin = {hmin:.3g}\nHmax = {hmax:.3g}\n"
-        f"Points = {int(stats.get('npoints', 0))}\nR² = {stats.get('r2', 0):.3f}"
+        f"Points = {int(stats.get('npoints', 0))}\n"
+        f"χ = {stats.get('chi', 0):.3g}\nR² = {stats.get('r2', 0):.3f}"
     )
     use_btn = box.addButton("Use detected", QMessageBox.ButtonRole.AcceptRole)
-    manual_btn = box.addButton("Choose manually...", QMessageBox.ButtonRole.ActionRole)
+    manual_btn = box.addButton(
+        "Choose manually...", QMessageBox.ButtonRole.ActionRole
+    )
     box.addButton(QMessageBox.StandardButton.Cancel)
     box.exec()
     clicked = box.clickedButton()
     if clicked is use_btn:
-        return "auto", (hmin, hmax)
+        return "auto"
     if clicked is manual_btn:
-        vals = prompt_field_window(parent, hmin, hmax)
-        if vals is None:
-            return "cancel", None
-        return "manual", vals
-    return "cancel", None
+        return "manual"
+    return "cancel"
 
 
 # ---- Sample parameters prompt (unit conversion helpers) ----

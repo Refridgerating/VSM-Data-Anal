@@ -334,24 +334,31 @@ class AnalysisDock(QDockWidget):
             except ValueError:
                 return
             try:
-                det = paramag.detect_linear_tail(df0, x0, y0)
-                choice, vals = prompts.confirm_fit_window(
+                det = paramag.autodetect_window(df0, x0, y0)
+            except Exception as exc:  # noqa: BLE001
+                errors.show_warning(
                     self,
-                    det["hmin"],
-                    det["hmax"],
-                    {"npoints": det["npoints"], "r2": det["r2"]},
+                    f"Auto-detect failed: {exc}. Please enter Hmin/Hmax manually.",
+                    title="Fit Warning",
                 )
-                if choice == "auto":
-                    hmin, hmax = det["hmin"], det["hmax"]
-                elif choice == "manual" and vals is not None:
-                    hmin, hmax = vals
-                else:
-                    return
-            except Exception:
-                vals = prompts.prompt_field_window(self)
+                return
+
+            choice = prompts.confirm_fit_window(
+                self,
+                det["hmin"],
+                det["hmax"],
+                det,
+            )
+            if choice == "auto":
+                hmin, hmax = det["hmin"], det["hmax"]
+            elif choice == "manual":
+                vals = prompts.prompt_field_window(self, det["hmin"], det["hmax"])
                 if vals is None:
                     return
                 hmin, hmax = vals
+            else:
+                return
+
             self.hmin_edit.setText(f"{hmin:.6g}")
             self.hmax_edit.setText(f"{hmax:.6g}")
 
