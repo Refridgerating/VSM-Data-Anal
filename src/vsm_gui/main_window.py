@@ -14,7 +14,7 @@ from PyQt6.QtWidgets import (
 from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as NavigationToolbar
 import pandas as pd
 
-from .file_io.loader import read_csv
+from .file_io.parsers import load_any
 from .plotting.manager import PlotManager
 from .utils import errors
 from .utils.logging import LOG_FILE, logger
@@ -128,7 +128,7 @@ class MainWindow(QMainWindow):
             valid_paths: list[Path] = []
             for path in paths:
                 try:
-                    df = read_csv(path)
+                    df = load_any(path)
                 except Exception as exc:  # noqa: BLE001
                     errors.show_error(self, f"Failed to read {path.name}: {exc}")
                     continue
@@ -178,8 +178,8 @@ class MainWindow(QMainWindow):
         if not self.manager.datasets:
             return
         headers: set[str] = set()
-        for df in self.manager.datasets.values():
-            headers.update(df.columns)
+        for ds in self.manager.datasets.values():
+            headers.update(ds.df.columns)
         dialog = AxisMappingDialog(sorted(headers), self._last_x, self._last_y, self)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return

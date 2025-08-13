@@ -231,8 +231,11 @@ class AnalysisDock(QDockWidget):
 
     def _selected_labels(self) -> list[str]:
         # Operate on all original datasets (skip already-corrected labels)
-        return [lbl for lbl in self.manager.datasets.keys()
-                if lbl not in self.manager.corrected_map.values()]
+        return [
+            lbl
+            for lbl in self.manager.datasets.keys()
+            if lbl not in self.manager.corrected_map.values()
+        ]
 
     def _clear_fit_lines(self) -> None:
         for line in self._fit_lines:
@@ -245,10 +248,13 @@ class AnalysisDock(QDockWidget):
         hmin, hmax = self._parse_window()
         self._fit_results.clear()
 
+        x_name, y_name = self.manager.get_axis_names()
+        if x_name is None or y_name is None:
+            return
         for label in self._selected_labels():
-            df, x, y = self.manager.datasets[label]
+            df = self.manager.datasets[label].df
             try:
-                result = paramag.fit_linear_tail(df, x, y, hmin, hmax)
+                result = paramag.fit_linear_tail(df, x_name, y_name, hmin, hmax)
             except Exception:
                 errors.show_error(self, f"Failed to fit {label}: not enough high-field points.", title="Fit Error")
                 continue
@@ -261,18 +267,25 @@ class AnalysisDock(QDockWidget):
             self._fit_lines.extend(line)
 
             if self.preview_check.isChecked():
-                df_corr = paramag.apply_subtraction(df, x, y, result["chi"], result["b"])
-                self.manager.add_corrected(label, df_corr, x, y + "_corr")
+                df_corr = paramag.apply_subtraction(
+                    df, x_name, y_name, result["chi"], result["b"]
+                )
+                self.manager.add_corrected(label, df_corr, x_name, y_name + "_corr")
 
         self.manager.pane.draw_idle()
 
     def apply_correction(self) -> None:
         if not self._fit_results:
             self.fit_and_preview()
+        x_name, y_name = self.manager.get_axis_names()
+        if x_name is None or y_name is None:
+            return
         for label, result in self._fit_results.items():
-            df, x, y = self.manager.datasets[label]
-            df_corr = paramag.apply_subtraction(df, x, y, result["chi"], result["b"])
-            self.manager.add_corrected(label, df_corr, x, y + "_corr")
+            df = self.manager.datasets[label].df
+            df_corr = paramag.apply_subtraction(
+                df, x_name, y_name, result["chi"], result["b"]
+            )
+            self.manager.add_corrected(label, df_corr, x_name, y_name + "_corr")
 
     def revert(self) -> None:
         for label in list(self.manager.corrected_map.keys()):
