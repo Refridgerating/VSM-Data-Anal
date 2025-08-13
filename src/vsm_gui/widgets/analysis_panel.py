@@ -1,5 +1,36 @@
 from __future__ import annotations
 
+from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import (
+    QApplication,
+    QCheckBox,
+    QComboBox,
+    QDockWidget,
+    QFileDialog,
+    QFormLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QHeaderView,
+    QInputDialog,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
+
+from ..analysis import anisotropy, metrics, paramag
+from ..plotting.manager import PlotManager
+from ..utils import errors
+from . import prompts
+
+import csv
+from typing import Dict
+
+
 class AnalysisDock(QDockWidget):
     """Dock panel for computing magnetic parameters and applying corrections."""
 

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-import sys
 from PyQt6.QtCore import QtMsgType, qInstallMessageHandler
 from PyQt6.QtWidgets import QApplication, QMessageBox
 
 from .main_window import MainWindow
 from .utils.logging import LOG_FILE, logger
+
+import sys
 
 
 def main() -> None:

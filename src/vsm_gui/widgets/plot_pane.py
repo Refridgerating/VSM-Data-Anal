@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Optional
-
 import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.lines import Line2D
+
+from pathlib import Path
+from typing import Optional
 
 plt.style.use("dark_background")
 plt.rcParams.update({"font.size": 10, "grid.alpha": 0.3})
@@ -89,8 +89,8 @@ class PlotPane(FigureCanvasQTAgg):
             self.axes.grid(self._grid_on, which="both")
         self.draw_idle()
 
-    def toggle_legend(self, visible: bool) -> None:
-        """Toggle legend visibility."""
+    def show_legend(self, visible: bool) -> None:
+        """Show or hide the legend."""
         self._legend_on = visible
         legend = self.axes.get_legend()
         handles, labels = self.axes.get_legend_handles_labels()
@@ -99,6 +99,10 @@ class PlotPane(FigureCanvasQTAgg):
         elif legend:
             legend.remove()
         self.draw_idle()
+
+    def toggle_legend(self, visible: bool) -> None:
+        """Backward-compatible wrapper for :meth:`show_legend`."""
+        self.show_legend(visible)
 
     def enable_data_cursor(self) -> None:
         """Enable a simple data cursor."""
