@@ -99,6 +99,12 @@ class AnalysisDock(QDockWidget):
 
         self.hmin_edit = QLineEdit()
         self.hmax_edit = QLineEdit()
+        tip = (
+            "High-field window used to estimate linear paramagnetic tail (χ). "
+            "Leave blank to auto-detect."
+        )
+        self.hmin_edit.setToolTip(tip)
+        self.hmax_edit.setToolTip(tip)
         form.addRow("H min", self.hmin_edit)
         form.addRow("H max", self.hmax_edit)
 
@@ -323,18 +329,18 @@ class AnalysisDock(QDockWidget):
                 return
             try:
                 det = paramag.detect_linear_tail(df0, x0, y0)
-                use_auto = prompts.confirm_detected_window(
-                    self, det["hmin"], det["hmax"]
+                choice, vals = prompts.confirm_fit_window(
+                    self,
+                    det["hmin"],
+                    det["hmax"],
+                    {"npoints": det["npoints"], "r2": det["r2"]},
                 )
-                if use_auto:
+                if choice == "auto":
                     hmin, hmax = det["hmin"], det["hmax"]
-                else:
-                    vals = prompts.prompt_field_window(
-                        self, det["hmin"], det["hmax"]
-                    )
-                    if vals is None:
-                        return
+                elif choice == "manual" and vals is not None:
                     hmin, hmax = vals
+                else:
+                    return
             except Exception:
                 vals = prompts.prompt_field_window(self)
                 if vals is None:
@@ -352,11 +358,11 @@ class AnalysisDock(QDockWidget):
                 continue
             try:
                 result = paramag.fit_linear_tail(df, x_name, y_name, hmin, hmax)
-            except Exception:
-                errors.show_error(
+            except Exception as exc:
+                errors.show_warning(
                     self,
-                    f"Failed to fit {label}: not enough high-field points.",
-                    title="Fit Error",
+                    f"Failed to fit {label}: {exc}",
+                    title="Fit Warning",
                 )
                 continue
             self._fit_results[label] = result
@@ -365,7 +371,13 @@ class AnalysisDock(QDockWidget):
 
             # overlay fit
             line = self.manager.pane.axes.plot(
-                result["x_fit"], result["y_fit"], "--", label=f"{label} fit"
+                result["x_fit"],
+                result["y_fit"],
+                "--",
+                color="gray",
+                alpha=0.7,
+                linewidth=1,
+                label=f"{label} fit",
             )
             self._fit_lines.extend(line)
 
@@ -373,9 +385,16 @@ class AnalysisDock(QDockWidget):
                 df_corr = paramag.apply_subtraction(
                     df, x_name, y_name, result["chi"], result["b"]
                 )
-                self.manager.add_corrected(
-                    label, df_corr, x_name, y_name + "_corr"
+                line_corr = self.manager.pane.axes.plot(
+                    df_corr[x_name],
+                    df_corr[y_name + "_corr"],
+                    "--",
+                    color="gray",
+                    alpha=0.7,
+                    linewidth=1,
+                    label=f"{label} corrected",
                 )
+                self._fit_lines.extend(line_corr)
 
         self.manager.pane.draw_idle()
 

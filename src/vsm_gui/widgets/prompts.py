@@ -12,6 +12,7 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QWidget,
 )
+from typing import Literal, Mapping
 
 # ---- High-field window prompt ----
 TITLE = "High-field Window"
@@ -87,6 +88,36 @@ def confirm_detected_window(parent: QWidget, hmin: float, hmax: float) -> bool:
     manual_btn = box.addButton("Choose manually...", QMessageBox.ButtonRole.ActionRole)
     box.exec()
     return box.clickedButton() is use_btn
+
+
+def confirm_fit_window(
+    parent: QWidget,
+    hmin: float,
+    hmax: float,
+    stats: Mapping[str, float],
+) -> tuple[Literal["auto", "manual", "cancel"], tuple[float, float] | None]:
+    """Confirm use of an auto-detected field window with fit statistics."""
+
+    box = QMessageBox(parent)
+    box.setWindowTitle("Auto-detected window")
+    box.setText(
+        "A high-field linear region was detected automatically.\n"
+        f"Hmin = {hmin:.3g}\nHmax = {hmax:.3g}\n"
+        f"Points = {int(stats.get('npoints', 0))}\nR² = {stats.get('r2', 0):.3f}"
+    )
+    use_btn = box.addButton("Use detected", QMessageBox.ButtonRole.AcceptRole)
+    manual_btn = box.addButton("Choose manually...", QMessageBox.ButtonRole.ActionRole)
+    box.addButton(QMessageBox.StandardButton.Cancel)
+    box.exec()
+    clicked = box.clickedButton()
+    if clicked is use_btn:
+        return "auto", (hmin, hmax)
+    if clicked is manual_btn:
+        vals = prompt_field_window(parent, hmin, hmax)
+        if vals is None:
+            return "cancel", None
+        return "manual", vals
+    return "cancel", None
 
 
 # ---- Sample parameters prompt (unit conversion helpers) ----
