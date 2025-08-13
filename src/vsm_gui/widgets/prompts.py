@@ -120,6 +120,40 @@ def confirm_fit_window(
     return "cancel"
 
 
+def confirm_detected_windows(parent: QWidget, label: str, stats: dict) -> str:
+    """Confirm auto-detected tail windows with per-branch statistics.
+
+    Returns "auto" if the user accepts the detected windows, "manual" if the
+    user wants to choose manually, and "cancel" to skip the dataset.
+    """
+
+    lines: list[str] = []
+    for branch in ("neg", "pos"):
+        br = stats.get(branch)
+        if not br:
+            continue
+        lines.append(
+            f"{branch} branch: n={br.get('n', 0)}, R²={br.get('r2', 0):.3f}, "
+            f"χ={br.get('chi', 0):.3g}, H=[{br.get('hmin', 0):.3g}, {br.get('hmax', 0):.3g}]"
+        )
+    if "chi_combined" in stats:
+        lines.append(f"χ_combined = {stats['chi_combined']:.3g}")
+
+    box = QMessageBox(parent)
+    box.setWindowTitle(f"Auto-detected windows - {label}")
+    box.setText("\n".join(lines) or "No valid tails detected")
+    use_btn = box.addButton("Use detected", QMessageBox.ButtonRole.AcceptRole)
+    manual_btn = box.addButton("Choose manually...", QMessageBox.ButtonRole.ActionRole)
+    box.addButton(QMessageBox.StandardButton.Cancel)
+    box.exec()
+    clicked = box.clickedButton()
+    if clicked is use_btn:
+        return "auto"
+    if clicked is manual_btn:
+        return "manual"
+    return "cancel"
+
+
 # ---- Sample parameters prompt (unit conversion helpers) ----
 def sample_parameters(parent: QWidget) -> dict | None:
     """Collect optional sample parameters for unit conversion.
