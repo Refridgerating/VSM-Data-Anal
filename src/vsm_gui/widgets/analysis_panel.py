@@ -40,6 +40,7 @@ class AnalysisDock(QDockWidget):
         self._fit_results: Dict[str, dict] = {}
         self._fit_lines: list = []
         self._analysis_results: Dict[str, dict] = {}
+        self._marker_handles: list = []
 
         widget = QWidget(self)
         layout = QVBoxLayout(widget)
@@ -170,7 +171,7 @@ class AnalysisDock(QDockWidget):
             if params is None:
                 return
 
-        self.manager.clear_markers()
+        self.manager.pane.clear_markers()
         self._analysis_results.clear()
         self.table.setRowCount(0)
         for item in datasets:
@@ -246,36 +247,49 @@ class AnalysisDock(QDockWidget):
 
     def _draw_markers(self) -> None:
         pane = self.manager.pane
-        self.manager.clear_markers()
+        pane.clear_markers()
+        self._marker_handles.clear()
         for res in self._analysis_results.values():
             ms = res.get("ms")
             if ms is not None:
                 window = res.get("ms_window")
                 if window:
                     hmin, hmax = window
-                    pane.add_vline(0.5 * (hmin + hmax))
-                pane.add_hline(ms, label=f"Ms={ms:.3g}")
+                    self._marker_handles.append(
+                        pane.add_vline(0.5 * (hmin + hmax))
+                    )
+                self._marker_handles.append(
+                    pane.add_hline(ms, label="Ms")
+                )
             hc = res.get("hc")
             if hc is not None:
-                pane.add_marker(-hc, 0.0, label="-Hc")
-                pane.add_marker(hc, 0.0, label="+Hc")
+                self._marker_handles.extend(
+                    pane.add_marker(-hc, 0.0, label="-Hc")
+                )
+                self._marker_handles.extend(
+                    pane.add_marker(hc, 0.0, label="+Hc")
+                )
             mr = res.get("mr")
             if mr is not None:
-                pane.add_marker(0.0, mr, label=f"Mr={mr:.3g}")
+                self._marker_handles.extend(
+                    pane.add_marker(0.0, mr, label="Mr")
+                )
             ku = res.get("ku")
             if ku is not None:
                 x0, x1 = pane.axes.get_xlim()
                 y0, y1 = pane.axes.get_ylim()
                 x = x0 + 0.05 * (x1 - x0)
                 y = y1 - 0.05 * (y1 - y0)
-                pane.add_marker(x, y, label=f"Ku={ku:.3g}")
+                self._marker_handles.extend(
+                    pane.add_marker(x, y, label=f"Ku={ku:.3g}")
+                )
         pane.draw_idle()
 
     def _toggle_markers(self, enabled: bool) -> None:
         if enabled:
             self._draw_markers()
         else:
-            self.manager.clear_markers()
+            self.manager.pane.clear_markers()
 
     def copy_results(self) -> None:
         rows = []
