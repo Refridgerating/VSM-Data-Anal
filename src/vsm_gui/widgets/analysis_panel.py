@@ -248,40 +248,48 @@ class AnalysisDock(QDockWidget):
         hmin, hmax = self._parse_window()
         self._fit_results.clear()
 
-        x_name, y_name = self.manager.get_axis_names()
-        if x_name is None or y_name is None:
-            return
         for label in self._selected_labels():
-            df = self.manager.datasets[label].df
+            try:
+                df, x_name, y_name = self.manager.get_dataset_tuple(label)
+            except ValueError:
+                continue
             try:
                 result = paramag.fit_linear_tail(df, x_name, y_name, hmin, hmax)
             except Exception:
-                errors.show_error(self, f"Failed to fit {label}: not enough high-field points.", title="Fit Error")
+                errors.show_error(
+                    self,
+                    f"Failed to fit {label}: not enough high-field points.",
+                    title="Fit Error",
+                )
                 continue
             self._fit_results[label] = result
             self.chi_label.setText(f"χ: {result['chi']:.3g}")
             self.b_label.setText(f"b: {result['b']:.3g}")
 
             # overlay fit
-            line = self.manager.pane.axes.plot(result["x_fit"], result["y_fit"], "--", label=f"{label} fit")
+            line = self.manager.pane.axes.plot(
+                result["x_fit"], result["y_fit"], "--", label=f"{label} fit"
+            )
             self._fit_lines.extend(line)
 
             if self.preview_check.isChecked():
                 df_corr = paramag.apply_subtraction(
                     df, x_name, y_name, result["chi"], result["b"]
                 )
-                self.manager.add_corrected(label, df_corr, x_name, y_name + "_corr")
+                self.manager.add_corrected(
+                    label, df_corr, x_name, y_name + "_corr"
+                )
 
         self.manager.pane.draw_idle()
 
     def apply_correction(self) -> None:
         if not self._fit_results:
             self.fit_and_preview()
-        x_name, y_name = self.manager.get_axis_names()
-        if x_name is None or y_name is None:
-            return
         for label, result in self._fit_results.items():
-            df = self.manager.datasets[label].df
+            try:
+                df, x_name, y_name = self.manager.get_dataset_tuple(label)
+            except ValueError:
+                continue
             df_corr = paramag.apply_subtraction(
                 df, x_name, y_name, result["chi"], result["b"]
             )
