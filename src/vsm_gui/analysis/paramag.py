@@ -48,6 +48,64 @@ def _select_window(
     return df[mask]
 
 
+def autodetect_window(
+    df: pd.DataFrame, x_name: str, y_name: str, frac: float = 0.2
+) -> Dict[str, Any]:
+    """Auto-select a high-field window and fit ``y = a*x + b``.
+
+    Parameters
+    ----------
+    df : DataFrame
+        Input data containing ``x_name`` and ``y_name`` columns.
+    x_name, y_name : str
+        Column names for the field and magnetization.
+    frac : float, optional
+        Fraction of data to use, starting from the highest ``|H|`` values.
+
+    Returns
+    -------
+    dict
+        ``{"hmin": float, "hmax": float, "chi": float, ``"b"``: float,
+        ``"npoints"``: int, ``"r2"``: float}``
+
+    Raises
+    ------
+    ValueError
+        If there are insufficient points or the fit is ill-conditioned / poor.
+    """
+
+    x = df[x_name]
+    threshold = x.abs().quantile(1 - frac)
+    mask = x.abs() >= threshold
+    window = df[mask]
+    n = len(window)
+    if n < 2:
+        raise ValueError("Not enough points for auto-detection")
+
+    xs = window[x_name]
+    ys = window[y_name]
+    try:
+        chi, b = np.polyfit(xs, ys, 1)
+    except np.linalg.LinAlgError as exc:  # pragma: no cover - extremely rare
+        raise ValueError("Ill-conditioned fit") from exc
+
+    y_pred = chi * xs + b
+    ss_res = np.sum((ys - y_pred) ** 2)
+    ss_tot = np.sum((ys - ys.mean()) ** 2)
+    r2 = 1 - ss_res / ss_tot if ss_tot != 0 else 0.0
+    if r2 < 0.7:
+        raise ValueError("Poor linear fit (r² < 0.7)")
+
+    return {
+        "hmin": float(xs.min()),
+        "hmax": float(xs.max()),
+        "chi": float(chi),
+        "b": float(b),
+        "npoints": int(n),
+        "r2": float(r2),
+    }
+
+
 def fit_linear_tail(
     df: pd.DataFrame,
     x_name: str,
