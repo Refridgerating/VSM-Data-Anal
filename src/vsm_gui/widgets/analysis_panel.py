@@ -23,6 +23,7 @@ from PyQt6.QtWidgets import (
 )
 
 from ..analysis import anisotropy, metrics, paramag
+from ..model import Dataset
 from ..plotting.manager import PlotManager
 from ..utils import errors
 from . import prompts
@@ -447,20 +448,40 @@ class AnalysisDock(QDockWidget):
     def apply_correction(self) -> None:
         if not self._fit_results:
             self.fit_and_preview()
+
         for label, result in self._fit_results.items():
             try:
                 df, x_name, y_name = self.manager.get_dataset_tuple(label)
             except ValueError:
                 continue
-            df_corr = paramag.apply_subtraction(
-                df, x_name, y_name, result["chi"]
+
+            # Cache the original data if this is the first correction
+            if label not in self.manager._original_cache:
+                self.manager._original_cache[label] = (df.copy(), x_name, y_name)
+
+            df_corr = paramag.apply_subtraction(df, x_name, y_name, result["chi"])
+
+            # Replace the dataset in the manager with the corrected version
+            self.manager.datasets.pop(label, None)
+            self.manager.datasets[label] = Dataset(
+                label, df_corr, x_name=x_name, y_name=y_name + "_corr"
             )
-            self.manager.replace_dataset(label, df_corr, x_name, y_name + "_corr")
+
+        self.manager._replot_all()
+        self.manager.pane.draw_idle()
 
     def revert(self) -> None:
-        for label in self._selected_labels():
-            if self.manager.is_corrected(label):
-                self.manager.revert_dataset(label)
+        for label, original in list(self.manager._original_cache.items()):
+            df, x_name, y_name = original
+            self.manager.datasets.pop(label, None)
+            self.manager.datasets[label] = Dataset(
+                label, df, x_name=x_name, y_name=y_name
+            )
+
+        if self.manager._original_cache:
+            self.manager._replot_all()
+        self.manager._original_cache.clear()
+
         self._clear_fit_lines()
         if hasattr(self.manager.pane, "clear_regions"):
             self.manager.pane.clear_regions()

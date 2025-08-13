@@ -18,8 +18,9 @@ class PlotManager:
         self.pane = pane
         # Mapping of label -> Dataset
         self.datasets: Dict[str, Dataset] = {}
-        # Cache of original datasets for temporary modifications
-        self._original_cache: Dict[str, Dataset] = {}
+        # Backup of original datasets when applying in-place corrections
+        # label -> (df, x_col, y_col)
+        self._original_cache: dict[str, tuple[pd.DataFrame, str, str]] = {}
 
         cycle = matplotlib.rcParams["axes.prop_cycle"].by_key()
         self._colors = cycle.get("color", [])
@@ -157,7 +158,12 @@ class PlotManager:
 
         # Cache original before replacing
         if label not in self._original_cache:
-            self._original_cache[label] = self.datasets[label]
+            ds = self.datasets[label]
+            orig_x = ds.x_name or self._x_name
+            orig_y = ds.y_name or self._y_name
+            if orig_x is None or orig_y is None:
+                raise ValueError(f"Axis names not set for dataset '{label}'")
+            self._original_cache[label] = (ds.df, orig_x, orig_y)
 
         # Overwrite dataset with corrected version
         self.datasets[label] = Dataset(
@@ -169,7 +175,8 @@ class PlotManager:
         """Restore the original dataset for *label* if a corrected one exists."""
         original = self._original_cache.pop(label, None)
         if original is not None:
-            self.datasets[label] = original
+            df, x_name, y_name = original
+            self.datasets[label] = Dataset(label, df, x_name=x_name, y_name=y_name)
             self._replot_all()
 
     def is_corrected(self, label: str) -> bool:
