@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
+from matplotlib.artist import Artist
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.lines import Line2D
@@ -28,6 +29,7 @@ class PlotPane(FigureCanvasQTAgg):
 
         self._annotation = None
         self._cursor_line: Line2D | None = None
+        self._markers: list[Artist] = []
 
         self.toggle_grid(True)
         self.toggle_minor_ticks(True)
@@ -40,6 +42,7 @@ class PlotPane(FigureCanvasQTAgg):
         self.toggle_minor_ticks(self._minor_on)
         self._annotation = None
         self._cursor_line = None
+        self.clear_markers()
         self.draw_idle()
 
     def plot_dataframe(
@@ -71,6 +74,51 @@ class PlotPane(FigureCanvasQTAgg):
     def reset_view(self) -> None:
         """Reset the view to show all data."""
         self.autoscale()
+
+    # ------------------------------------------------------------------
+    # Marker helpers
+    # ------------------------------------------------------------------
+    def add_marker(self, x: float, y: float, label: str) -> list[Artist]:
+        """Place a marker with a small text label."""
+        (pt,) = self.axes.plot([x], [y], marker="o")
+        txt = self.axes.annotate(
+            label,
+            xy=(x, y),
+            xytext=(5, 5),
+            textcoords="offset points",
+        )
+        self._markers.extend([pt, txt])
+        return [pt, txt]
+
+    def add_vline(self, x: float, label: str | None = None) -> Artist:
+        """Draw a vertical reference line."""
+        line = self.axes.axvline(x, linestyle="--")
+        self._markers.append(line)
+        if label:
+            ylim = self.axes.get_ylim()
+            txt = self.axes.text(x, ylim[1], label, va="bottom")
+            self._markers.append(txt)
+        return line
+
+    def add_hline(self, y: float, label: str | None = None) -> Artist:
+        """Draw a horizontal reference line."""
+        line = self.axes.axhline(y, linestyle="--")
+        self._markers.append(line)
+        if label:
+            xlim = self.axes.get_xlim()
+            txt = self.axes.text(xlim[1], y, label, ha="left", va="center")
+            self._markers.append(txt)
+        return line
+
+    def clear_markers(self) -> None:
+        """Remove any previously added markers/annotations."""
+        for art in self._markers:
+            try:
+                art.remove()
+            except Exception:  # noqa: BLE001
+                pass
+        self._markers.clear()
+        self.draw_idle()
 
     def toggle_grid(self, enabled: bool) -> None:
         """Toggle the grid visibility."""

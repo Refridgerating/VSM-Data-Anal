@@ -39,6 +39,7 @@ class AnalysisDock(QDockWidget):
         self.manager = manager
         self._fit_results: Dict[str, dict] = {}
         self._fit_lines: list = []
+        self._analysis_results: Dict[str, dict] = {}
 
         widget = QWidget(self)
         layout = QVBoxLayout(widget)
@@ -50,6 +51,13 @@ class AnalysisDock(QDockWidget):
         self.chk_ku = QCheckBox("Anisotropy Constant (Ku)")
         for w in (self.chk_ms, self.chk_hc, self.chk_mr, self.chk_ku):
             layout.addWidget(w)
+
+        self.marker_chk = QCheckBox("Show markers on plot")
+        self.marker_chk.setChecked(True)
+        self.marker_chk.stateChanged.connect(
+            lambda s: self._toggle_markers(s == Qt.CheckState.Checked)
+        )
+        layout.addWidget(self.marker_chk)
 
         self.convert_chk = QCheckBox("Convert to A/m")
         layout.addWidget(self.convert_chk)
@@ -150,53 +158,112 @@ class AnalysisDock(QDockWidget):
             if params is None:
                 return
 
+        self.manager.clear_markers()
+        self._analysis_results.clear()
         self.table.setRowCount(0)
         for item in datasets:
             label = item["label"]; df = item["df"]
             row = self.table.rowCount(); self.table.insertRow(row)
             self.table.setItem(row, 0, QTableWidgetItem(label))
             notes: list[str] = []
+            result: dict = {}
 
             if self.chk_ms.isChecked():
                 try:
-                    ms, _ = metrics.saturation_magnetization(
-                        df, x_name, y_name, window=window, convert=self.convert_chk.isChecked(), params=params
+                    ms, det = metrics.saturation_magnetization(
+                        df,
+                        x_name,
+                        y_name,
+                        window=window,
+                        convert=self.convert_chk.isChecked(),
+                        params=params,
                     )
                     self.table.setItem(row, 1, QTableWidgetItem(f"{ms:.3g}"))
+                    result["ms"] = ms
+                    result["ms_window"] = det.get("window")
                 except Exception as exc:  # noqa: BLE001
                     self.table.setItem(row, 1, QTableWidgetItem("")); notes.append(str(exc))
-            else: self.table.setItem(row, 1, QTableWidgetItem(""))
+            else:
+                self.table.setItem(row, 1, QTableWidgetItem(""))
 
             if self.chk_hc.isChecked():
                 try:
-                    hc, _ = metrics.coercivity(df, x_name, y_name)
+                    hc, det = metrics.coercivity(df, x_name, y_name)
                     self.table.setItem(row, 2, QTableWidgetItem(f"{hc:.3g}"))
+                    result["hc"] = hc
                 except Exception as exc:  # noqa: BLE001
                     self.table.setItem(row, 2, QTableWidgetItem("")); notes.append(str(exc))
-            else: self.table.setItem(row, 2, QTableWidgetItem(""))
+            else:
+                self.table.setItem(row, 2, QTableWidgetItem(""))
 
             if self.chk_mr.isChecked():
                 try:
-                    mr, _ = metrics.remanence(df, x_name, y_name)
+                    mr, det = metrics.remanence(df, x_name, y_name)
                     self.table.setItem(row, 3, QTableWidgetItem(f"{mr:.3g}"))
+                    result["mr"] = mr
                 except Exception as exc:  # noqa: BLE001
                     self.table.setItem(row, 3, QTableWidgetItem("")); notes.append(str(exc))
-            else: self.table.setItem(row, 3, QTableWidgetItem(""))
+            else:
+                self.table.setItem(row, 3, QTableWidgetItem(""))
 
             if self.chk_ku.isChecked():
                 try:
                     ku, det = anisotropy.sucksmith_thompson(
-                        df, x_name, y_name, window=window,
+                        df,
+                        x_name,
+                        y_name,
+                        window=window,
                         apply_demag=self.demag_chk.isChecked(),
                         geometry=self.geometry_combo.currentText(),
                     )
                     self.table.setItem(row, 4, QTableWidgetItem(f"{ku:.3g}"))
-                    if det.get("note"): notes.append(det["note"])
+                    result["ku"] = ku
+                    result["ku_window"] = det.get("window")
+                    if det.get("note"):
+                        notes.append(det["note"])
                 except Exception as exc:  # noqa: BLE001
                     self.table.setItem(row, 4, QTableWidgetItem("")); notes.append(str(exc))
-            else: self.table.setItem(row, 4, QTableWidgetItem(""))
+            else:
+                self.table.setItem(row, 4, QTableWidgetItem(""))
 
             self.table.setItem(row, 5, QTableWidgetItem("; ".join(notes)))
+            self._analysis_results[label] = result
+
+        if self.marker_chk.isChecked():
+            self._draw_markers()
+
+    def _draw_markers(self) -> None:
+        pane = self.manager.pane
+        self.manager.clear_markers()
+        for res in self._analysis_results.values():
+            ms = res.get("ms")
+            if ms is not None:
+                window = res.get("ms_window")
+                if window:
+                    hmin, hmax = window
+                    pane.add_vline(0.5 * (hmin + hmax))
+                pane.add_hline(ms, label=f"Ms={ms:.3g}")
+            hc = res.get("hc")
+            if hc is not None:
+                pane.add_marker(-hc, 0.0, label="-Hc")
+                pane.add_marker(hc, 0.0, label="+Hc")
+            mr = res.get("mr")
+            if mr is not None:
+                pane.add_marker(0.0, mr, label=f"Mr={mr:.3g}")
+            ku = res.get("ku")
+            if ku is not None:
+                x0, x1 = pane.axes.get_xlim()
+                y0, y1 = pane.axes.get_ylim()
+                x = x0 + 0.05 * (x1 - x0)
+                y = y1 - 0.05 * (y1 - y0)
+                pane.add_marker(x, y, label=f"Ku={ku:.3g}")
+        pane.draw_idle()
+
+    def _toggle_markers(self, enabled: bool) -> None:
+        if enabled:
+            self._draw_markers()
+        else:
+            self.manager.clear_markers()
 
     def copy_results(self) -> None:
         rows = []
