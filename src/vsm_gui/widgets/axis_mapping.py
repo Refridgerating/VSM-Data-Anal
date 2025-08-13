@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from typing import Sequence
 from PyQt6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -9,6 +8,8 @@ from PyQt6.QtWidgets import (
     QLabel,
     QWidget,
 )
+
+from typing import Sequence
 
 TITLE = "Select Columns"
 LABEL_X = "X axis"

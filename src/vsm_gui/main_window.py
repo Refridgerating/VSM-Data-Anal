@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-
-import pandas as pd
 from PyQt6.QtCore import QUrl, Qt
 from PyQt6.QtGui import QAction, QDesktopServices
 from PyQt6.QtWidgets import (
@@ -13,16 +10,20 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
 from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as NavigationToolbar
+import pandas as pd
 
 from .file_io.loader import read_csv
 from .plotting.manager import PlotManager
 from .utils import errors
 from .utils.logging import LOG_FILE, logger
+from .widgets.analysis_panel import AnalysisDock
 from .widgets.axis_mapping import AxisMappingDialog
 from .widgets.file_picker import pick_csv_files
 from .widgets.plot_pane import PlotPane
-from .widgets.analysis_panel import AnalysisDock
+
+from pathlib import Path
 
 WINDOW_TITLE = "VSM Data Viewer"
 OPEN_TEXT = "Open…"
