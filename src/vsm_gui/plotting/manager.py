@@ -206,3 +206,7 @@ class PlotManager:
         """Reset the axes limits."""
         self.pane.reset_view()
 
+    def clear_markers(self) -> None:
+        """Remove any marker annotations from the plot."""
+        self.pane.clear_markers()
+
