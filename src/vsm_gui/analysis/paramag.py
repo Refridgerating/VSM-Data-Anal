@@ -15,6 +15,8 @@ class FitResult:
     y_fit: pd.Series
     r2: float
     npoints: int
+    hmin: float
+    hmax: float
 
     def as_dict(self) -> Dict[str, Any]:
         return {
@@ -24,6 +26,8 @@ class FitResult:
             "y_fit": self.y_fit,
             "r2": self.r2,
             "npoints": self.npoints,
+            "hmin": self.hmin,
+            "hmax": self.hmax,
         }
 
 
@@ -69,15 +73,54 @@ def fit_linear_tail(
     if n < 2:
         raise ValueError("Not enough points in selected window")
 
-    A = np.vstack([x.to_numpy(), np.ones(n)]).T
-    chi, b = np.linalg.lstsq(A, y.to_numpy(), rcond=None)[0]
+    chi, b = np.polyfit(x, y, 1)
     y_pred = chi * x + b
     ss_res = np.sum((y - y_pred) ** 2)
     ss_tot = np.sum((y - y.mean()) ** 2)
     r2 = 1 - ss_res / ss_tot if ss_tot != 0 else 0.0
 
-    result = FitResult(chi, b, x, y_pred, r2, n)
+    result = FitResult(chi, b, x, y_pred, r2, n, x.min(), x.max())
     return result.as_dict()
+
+
+def detect_linear_tail(
+    df: pd.DataFrame,
+    x_name: str,
+    y_name: str,
+    quantiles: tuple[float, float] = (0.8, 0.9),
+    min_points: int = 20,
+    min_r2: float = 0.7,
+) -> Dict[str, Any]:
+    """Auto-detect a high-field linear region and fit it.
+
+    The algorithm selects points where ``|H|`` is above the given quantiles,
+    fits a line ``M = chi*H + b`` and checks that enough points are used and
+    that the fit quality is acceptable. If the first quantile fails the
+    requirements the next one is attempted.  On failure a ``ValueError`` is
+    raised so the caller may fall back to manual selection.
+    """
+
+    x = df[x_name]
+    y = df[y_name]
+    for q in quantiles:
+        threshold = x.abs().quantile(q)
+        mask = x.abs() >= threshold
+        window = df[mask]
+        n = len(window)
+        if n < 2:
+            continue
+        xs = window[x_name]
+        ys = window[y_name]
+        chi, b = np.polyfit(xs, ys, 1)
+        y_pred = chi * xs + b
+        ss_res = np.sum((ys - y_pred) ** 2)
+        ss_tot = np.sum((ys - ys.mean()) ** 2)
+        r2 = 1 - ss_res / ss_tot if ss_tot != 0 else 0.0
+        if n >= min_points and r2 >= min_r2:
+            result = FitResult(chi, b, xs, y_pred, r2, n, xs.min(), xs.max())
+            return result.as_dict()
+
+    raise ValueError("Auto-detection failed")
 
 
 def apply_subtraction(
