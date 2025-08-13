@@ -96,6 +96,51 @@ class PlotManager:
         """Return currently active axis names."""
         return self._x_name, self._y_name
 
+    def get_dataset_tuple(self, label: str) -> tuple[pd.DataFrame, str, str]:
+        """Return ``(df, x_name, y_name)`` for *label* regardless of storage format.
+
+        This accessor handles both the modern :class:`Dataset` objects and the
+        legacy ``(df, x, y, ...)`` tuples.  Axis names stored on the Dataset take
+        precedence, but fall back to the manager's active axis names.  A
+        :class:`ValueError` is raised if the label is unknown or the axis names
+        cannot be determined.
+        """
+
+        if label not in self.datasets:
+            raise ValueError(f"Unknown dataset label: {label}")
+
+        ds = self.datasets[label]
+
+        # Dataset objects -------------------------------------------------
+        if isinstance(ds, Dataset):
+            x_name = ds.x_name or self._x_name
+            y_name = ds.y_name or self._y_name
+            if x_name is None or y_name is None:
+                raise ValueError(f"Axis names not set for dataset '{label}'")
+            return ds.df, x_name, y_name
+
+        # Legacy tuple-based storage --------------------------------------
+        if isinstance(ds, (tuple, list)):
+            if len(ds) < 1:
+                raise ValueError(f"Dataset tuple for '{label}' is empty")
+            df = ds[0]
+            x_name = ds[1] if len(ds) > 1 else None
+            y_name = ds[2] if len(ds) > 2 else None
+            x_name = x_name or self._x_name
+            y_name = y_name or self._y_name
+            if x_name is None or y_name is None:
+                raise ValueError(f"Axis names not set for dataset '{label}'")
+            if not isinstance(df, pd.DataFrame):
+                raise ValueError(
+                    f"First element of dataset '{label}' is not a DataFrame"
+                )
+            return df, x_name, y_name
+
+        # Unknown type ----------------------------------------------------
+        raise ValueError(
+            f"Unsupported dataset type for '{label}': {type(ds).__name__}"
+        )
+
     # ------------------------------------------------------------------
     # Corrected data handling
     # ------------------------------------------------------------------
@@ -140,7 +185,17 @@ class PlotManager:
         """Return list of datasets with labels and dataframes."""
         items: List[dict] = []
         for label, ds in self.datasets.items():
-            items.append({"label": label, "df": ds.df})
+            if isinstance(ds, Dataset):
+                df = ds.df
+            elif isinstance(ds, (tuple, list)):
+                if not ds:
+                    continue
+                df = ds[0]
+                if not isinstance(df, pd.DataFrame):
+                    continue
+            else:
+                continue
+            items.append({"label": label, "df": df})
         return items
 
     def export_png(self, path: Path) -> None:
