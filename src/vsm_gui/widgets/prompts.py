@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import (
     QDoubleSpinBox,
     QFormLayout,
     QInputDialog,
+    QMessageBox,
     QWidget,
 )
 
@@ -68,6 +69,24 @@ def prompt_field_window(
     if dialog.exec() == QDialog.DialogCode.Accepted:
         return dialog.values()
     return None
+
+
+def confirm_detected_window(parent: QWidget, hmin: float, hmax: float) -> bool:
+    """Confirm use of an auto-detected field window.
+
+    Returns ``True`` if the user chooses the detected window, ``False`` if the
+    user wants to pick values manually.
+    """
+    box = QMessageBox(parent)
+    box.setWindowTitle("Auto-detected window")
+    box.setText(
+        "A high-field linear region was detected automatically.\n"
+        f"Hmin = {hmin:.3g}\nHmax = {hmax:.3g}"
+    )
+    use_btn = box.addButton("Use detected", QMessageBox.ButtonRole.AcceptRole)
+    manual_btn = box.addButton("Choose manually...", QMessageBox.ButtonRole.ActionRole)
+    box.exec()
+    return box.clickedButton() is use_btn
 
 
 # ---- Sample parameters prompt (unit conversion helpers) ----

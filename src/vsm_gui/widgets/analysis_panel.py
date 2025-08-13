@@ -313,6 +313,36 @@ class AnalysisDock(QDockWidget):
     def fit_and_preview(self) -> None:
         self._clear_fit_lines()
         hmin, hmax = self._parse_window()
+        if hmin is None and hmax is None:
+            labels = self._selected_labels()
+            if not labels:
+                return
+            try:
+                df0, x0, y0 = self.manager.get_dataset_tuple(labels[0])
+            except ValueError:
+                return
+            try:
+                det = paramag.detect_linear_tail(df0, x0, y0)
+                use_auto = prompts.confirm_detected_window(
+                    self, det["hmin"], det["hmax"]
+                )
+                if use_auto:
+                    hmin, hmax = det["hmin"], det["hmax"]
+                else:
+                    vals = prompts.prompt_field_window(
+                        self, det["hmin"], det["hmax"]
+                    )
+                    if vals is None:
+                        return
+                    hmin, hmax = vals
+            except Exception:
+                vals = prompts.prompt_field_window(self)
+                if vals is None:
+                    return
+                hmin, hmax = vals
+            self.hmin_edit.setText(f"{hmin:.6g}")
+            self.hmax_edit.setText(f"{hmax:.6g}")
+
         self._fit_results.clear()
 
         for label in self._selected_labels():
