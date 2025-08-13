@@ -28,6 +28,7 @@ from ..utils import errors
 from . import prompts
 
 import csv
+import numpy as np
 from typing import Dict
 
 
@@ -107,8 +108,8 @@ class AnalysisDock(QDockWidget):
         self.hmin_edit = QLineEdit()
         self.hmax_edit = QLineEdit()
         tip = (
-            "High-field window used to estimate linear paramagnetic tail (χ). "
-            "Leave blank to auto-detect."
+            "High-field window for paramagnetic-tail fit. "
+            "Leave blank to auto-detect per dataset (per branch)."
         )
         self.hmin_edit.setToolTip(tip)
         self.hmax_edit.setToolTip(tip)
@@ -338,43 +339,12 @@ class AnalysisDock(QDockWidget):
 
     def fit_and_preview(self) -> None:
         self._clear_fit_lines()
-        hmin, hmax = self._parse_window()
-        if hmin is None and hmax is None:
-            labels = self._selected_labels()
-            if not labels:
-                return
-            try:
-                df0, x0, y0 = self.manager.get_dataset_tuple(labels[0])
-            except ValueError:
-                return
-            try:
-                det = paramag.autodetect_window(df0, x0, y0)
-            except Exception as exc:  # noqa: BLE001
-                errors.show_warning(
-                    self,
-                    f"Auto-detect failed: {exc}. Please enter Hmin/Hmax manually.",
-                    title="Fit Warning",
-                )
-                return
-
-            choice = prompts.confirm_fit_window(
-                self,
-                det["hmin"],
-                det["hmax"],
-                det,
-            )
-            if choice == "auto":
-                hmin, hmax = det["hmin"], det["hmax"]
-            elif choice == "manual":
-                vals = prompts.prompt_field_window(self, det["hmin"], det["hmax"])
-                if vals is None:
-                    return
-                hmin, hmax = vals
-            else:
-                return
-
-            self.hmin_edit.setText(f"{hmin:.6g}")
-            self.hmax_edit.setText(f"{hmax:.6g}")
+        if hasattr(self.manager.pane, "clear_regions"):
+            self.manager.pane.clear_regions()
+        hmin_ui, hmax_ui = self._parse_window()
+        if (hmin_ui is None) ^ (hmax_ui is None):
+            errors.show_warning(self, "Provide both Hmin and Hmax", title="Fit Warning")
+            return
 
         self._fit_results.clear()
 
@@ -383,35 +353,86 @@ class AnalysisDock(QDockWidget):
                 df, x_name, y_name = self.manager.get_dataset_tuple(label)
             except ValueError:
                 continue
-            try:
-                result = paramag.fit_linear_tail(df, x_name, y_name, hmin, hmax)
-            except Exception as exc:
-                errors.show_warning(
-                    self,
-                    f"Failed to fit {label}: {exc}",
-                    title="Fit Warning",
-                )
-                continue
-            self._fit_results[label] = result
-            self.chi_label.setText(f"χ: {result['chi']:.3g}")
-            self.b_label.setText(f"b: {result['b']:.3g}")
 
-            # overlay fit
-            line = self.manager.pane.axes.plot(
-                result["x_fit"],
-                result["y_fit"],
-                "--",
-                color="gray",
-                alpha=0.7,
-                linewidth=1,
-                label=f"{label} fit",
-            )
-            self._fit_lines.extend(line)
+            windows: dict[str, dict] = {}
+            if hmin_ui is None and hmax_ui is None:
+                try:
+                    det = paramag.autodetect_windows(df, x_name, y_name)
+                except Exception as exc:  # noqa: BLE001
+                    errors.show_warning(
+                        self,
+                        f"{label}: auto-detect failed ({exc})",
+                        title="Fit Warning",
+                    )
+                    continue
+                choice = prompts.confirm_detected_windows(self, label, det)
+                if choice == "cancel":
+                    continue
+                if choice == "manual":
+                    vals = prompts.prompt_field_window(self)
+                    if vals is None:
+                        continue
+                    hmin_use, hmax_use = vals
+                    windows = {
+                        "neg": {"hmin": -hmax_use, "hmax": -hmin_use},
+                        "pos": {"hmin": hmin_use, "hmax": hmax_use},
+                    }
+                else:
+                    windows = {k: det.get(k) for k in ("neg", "pos")}
+            else:
+                windows = {
+                    "neg": {"hmin": -hmax_ui, "hmax": -hmin_ui},
+                    "pos": {"hmin": hmin_ui, "hmax": hmax_ui},
+                }
+
+            branch_results: dict[str, dict] = {}
+            for br, win in windows.items():
+                if not win:
+                    continue
+                try:
+                    res = paramag.fit_linear_tail(
+                        df, x_name, y_name, win.get("hmin"), win.get("hmax")
+                    )
+                except Exception as exc:
+                    errors.show_warning(
+                        self,
+                        f"Failed to fit {label} ({br}): {exc}",
+                        title="Fit Warning",
+                    )
+                    continue
+                branch_results[br] = res
+                line = self.manager.pane.axes.plot(
+                    res["x_fit"],
+                    res["y_fit"],
+                    "--",
+                    color="gray",
+                    alpha=0.7,
+                    linewidth=1,
+                    label=f"{label} {br} tail fit",
+                )
+                self._fit_lines.extend(line)
+                if hasattr(self.manager.pane, "shade_xrange"):
+                    self.manager.pane.shade_xrange(
+                        res["hmin"], res["hmax"], label=None
+                    )
+
+            if not branch_results:
+                continue
+
+            chi_vals = [r["chi"] for r in branch_results.values()]
+            b_vals = [r["b"] for r in branch_results.values()]
+            chi_comb = float(np.median(chi_vals))
+            b_comb = float(np.median(b_vals))
+            self._fit_results[label] = {
+                "chi": chi_comb,
+                "b": b_comb,
+                "branches": branch_results,
+            }
+            self.chi_label.setText(f"χ: {chi_comb:.3g}")
+            self.b_label.setText(f"b: {b_comb:.3g}")
 
             if self.preview_check.isChecked():
-                df_corr = paramag.apply_subtraction(
-                    df, x_name, y_name, result["chi"], result["b"]
-                )
+                df_corr = paramag.apply_subtraction(df, x_name, y_name, chi_comb)
                 line_corr = self.manager.pane.axes.plot(
                     df_corr[x_name],
                     df_corr[y_name + "_corr"],
@@ -434,13 +455,16 @@ class AnalysisDock(QDockWidget):
             except ValueError:
                 continue
             df_corr = paramag.apply_subtraction(
-                df, x_name, y_name, result["chi"], result["b"]
+                df, x_name, y_name, result["chi"]
             )
             self.manager.add_corrected(label, df_corr, x_name, y_name + "_corr")
 
     def revert(self) -> None:
-        for label in list(self.manager.corrected_map.keys()):
-            self.manager.remove_corrected(label)
+        for label in self._selected_labels():
+            if label in self.manager.corrected_map:
+                self.manager.remove_corrected(label)
         self._clear_fit_lines()
+        if hasattr(self.manager.pane, "clear_regions"):
+            self.manager.pane.clear_regions()
         self.manager.pane.draw_idle()
 

@@ -30,6 +30,7 @@ class PlotPane(FigureCanvasQTAgg):
         self._annotation = None
         self._cursor_line: Line2D | None = None
         self._markers: list[Artist] = []
+        self._regions: list[Artist] = []
 
         self.toggle_grid(True)
         self.toggle_minor_ticks(True)
@@ -43,6 +44,7 @@ class PlotPane(FigureCanvasQTAgg):
         self._annotation = None
         self._cursor_line = None
         self.clear_markers()
+        self.clear_regions()
         self.draw_idle()
 
     def plot_dataframe(
@@ -118,6 +120,26 @@ class PlotPane(FigureCanvasQTAgg):
             except Exception:  # noqa: BLE001
                 pass
         self._markers.clear()
+        self.draw_idle()
+
+    def shade_xrange(self, x0: float, x1: float, label: str | None = None) -> None:
+        """Shade a range on the x-axis for visualising fit windows."""
+        region = self.axes.axvspan(x0, x1, color="gray", alpha=0.2)
+        self._regions.append(region)
+        if label:
+            ylim = self.axes.get_ylim()
+            txt = self.axes.text((x0 + x1) / 2, ylim[1], label, ha="center", va="bottom")
+            self._regions.append(txt)
+        self.draw_idle()
+
+    def clear_regions(self) -> None:
+        """Remove previously shaded x-ranges."""
+        for art in self._regions:
+            try:
+                art.remove()
+            except Exception:  # noqa: BLE001
+                pass
+        self._regions.clear()
         self.draw_idle()
 
     def toggle_grid(self, enabled: bool) -> None:
