@@ -61,20 +61,20 @@ def autodetect_windows(
     max_frac: float = 0.4,
     n_min: int = 20,
     dh_min_frac: float = 0.10,
-    smooth_window: int | None = None,
 ) -> dict:
     """Auto-detect high-field linear tails for negative and positive branches.
 
-    Parameters are tuned for typical VSM loops.  Data are split by the sign of
-    ``H`` and analysed separately so that each branch is treated
-    independently.  Only the slope ``χ`` of the paramagnetic contribution is
-    considered when correcting the data; the intercept is preserved so that no
-    vertical shift occurs.
+    The routine is purely linear; it does **not** attempt to locate a
+    saturation plateau.  Data are split by field sign, the central ``|H|``
+    region is excluded and each branch is analysed independently.  A sliding
+    window is moved from the outermost field towards the centre and the
+    outermost contiguous stretch of linear windows is selected.
 
-    Returns a dictionary containing per-branch statistics and the combined
-    susceptibility (median of available branch values).
+    The function returns per-branch fit statistics and the combined
+    susceptibility ``chi_combined`` (median of branch slopes).
     """
 
+    # --- Prepare data -------------------------------------------------
     dfc = df[[x_name, y_name]].apply(pd.to_numeric, errors="coerce").replace(
         [np.inf, -np.inf], np.nan
     )
@@ -83,18 +83,19 @@ def autodetect_windows(
         raise ValueError("No valid data")
 
     h = dfc[x_name]
-    m = dfc[y_name]
     hmax = float(h.abs().max())
     core_limit = core_exclude_frac * hmax
 
     notes: list[str] = []
 
+    # ------------------------------------------------------------------
     def _process_branch(mask: pd.Series, name: str) -> dict | None:
         branch = dfc[mask]
         if branch.empty:
             notes.append(f"{name} branch: no data")
             return None
-        # Sort so that index 0 corresponds to the outermost field value
+
+        # Sort so index 0 corresponds to the outermost field value
         if name == "pos":
             branch = branch.sort_values(x_name, ascending=False)
         else:
@@ -107,84 +108,89 @@ def autodetect_windows(
             notes.append(f"{name} branch: insufficient points")
             return None
 
-        w = max(n_min, int(slide_frac * n))
+        w = max(7, int(slide_frac * n))
+        if w % 2 == 0:
+            w += 1
         if w > n:
             notes.append(f"{name} branch: window larger than branch")
             return None
 
-        if smooth_window and smooth_window > 1:
-            y_diag = (
-                pd.Series(y)
-                .rolling(smooth_window, center=True, min_periods=1)
-                .mean()
-                .to_numpy()
-            )
-        else:
-            y_diag = y
-
         slopes: list[float] = []
-        start_idx: int | None = None
-        i = 0
-        while i <= n - w:
+        r2s: list[float] = []
+        qs: list[float] = []
+        starts: list[int] = []
+        ends: list[int] = []
+        for i in range(n - w + 1):
             xs = x[i : i + w]
-            ys = y_diag[i : i + w]
+            ys = y[i : i + w]
             try:
-                slope, intercept = np.polyfit(xs, ys, 1)
-                y_pred = slope * xs + intercept
+                a, b = np.polyfit(xs, ys, 1)
+                q = float(np.polyfit(xs, ys, 2)[0])
+                y_pred = a * xs + b
                 ss_res = np.sum((ys - y_pred) ** 2)
                 ss_tot = np.sum((ys - ys.mean()) ** 2)
                 r2 = 1 - ss_res / ss_tot if ss_tot != 0 else 0.0
-                if q_abs_max is not None:
-                    q = np.polyfit(xs, ys, 2)[0]
-                    curvature_ok = abs(q) <= q_abs_max
-                else:
-                    curvature_ok = True
             except np.linalg.LinAlgError:
-                break
-            if r2 >= r2_min and curvature_ok:
-                if start_idx is None:
-                    start_idx = i
-                slopes.append(float(slope))
-                i += 1
+                continue
+            slopes.append(float(a))
+            r2s.append(float(r2))
+            qs.append(q)
+            starts.append(i)
+            ends.append(i + w - 1)
+
+        if not slopes:
+            notes.append(f"{name} branch: no windows")
+            return None
+
+        slopes_arr = np.array(slopes)
+        r2_arr = np.array(r2s)
+        q_arr = np.array(qs)
+
+        if q_abs_max is None:
+            good = r2_arr >= r2_min
+            if np.any(good) and np.isfinite(q_arr[good]).any():
+                q_limit = float(np.quantile(np.abs(q_arr[good]), 0.9))
             else:
-                if start_idx is None:
-                    i += 1
-                    continue
-                else:
-                    break
+                q_limit = float("inf")
+        else:
+            q_limit = q_abs_max
 
-        if start_idx is None or not slopes:
-            notes.append(f"{name} branch: no valid window")
+        linear = (r2_arr >= r2_min) & (np.abs(q_arr) <= q_limit)
+        if not linear.any():
+            notes.append(f"{name} branch: no linear windows")
             return None
-        valid_count = len(slopes)
 
-        # Enforce slope stability by trimming from the inner side
-        while valid_count > 1:
-            s = np.array(slopes[:valid_count])
-            mean_s = float(np.mean(s))
-            std_s = float(np.std(s))
-            rel = np.inf if mean_s == 0 else std_s / abs(mean_s)
-            if rel <= slope_std_rel_max:
+        valid = 0
+        slope_track: list[float] = []
+        for lin, s in zip(linear, slopes_arr):
+            if not lin:
                 break
-            valid_count -= 1
+            slope_track.append(float(s))
+            med = float(np.median(np.abs(slope_track)))
+            std = float(np.std(slope_track))
+            rel = np.inf if med == 0 else std / med
+            if rel <= slope_std_rel_max:
+                valid += 1
+            else:
+                break
 
-        if valid_count == 0:
-            notes.append(f"{name} branch: unstable slope")
+        if valid == 0:
+            notes.append(f"{name} branch: slope unstable")
             return None
 
-        end = start_idx + valid_count + w - 1
-        end = min(end, n - 1)
-        region_len = end - start_idx + 1
-        max_len = int(max_frac * n)
-        if region_len > max_len:
-            end = start_idx + max_len - 1
-            region_len = end - start_idx + 1
-        if region_len < n_min:
+        start_idx = starts[0]
+        end_idx = ends[valid - 1]
+        n_pts = end_idx - start_idx + 1
+        max_pts = int(max_frac * n)
+        if n_pts > max_pts:
+            end_idx = start_idx + max_pts - 1
+            n_pts = max_pts
+        if n_pts < n_min:
             notes.append(f"{name} branch: window too short")
             return None
 
-        xs = x[start_idx : end + 1]
-        ys = y[start_idx : end + 1]  # use original data for final fit
+        xs = x[start_idx : end_idx + 1]
+        ys = y[start_idx : end_idx + 1]
 
         dh = abs(xs[-1] - xs[0])
         span = abs(x[-1] - x[0])
@@ -201,13 +207,15 @@ def autodetect_windows(
         return {
             "hmin": float(xs.min()),
             "hmax": float(xs.max()),
-            "idx": (0, int(end)),
+            "idx": (int(start_idx), int(end_idx)),
             "chi": float(slope),
             "b": float(intercept),
             "r2": float(r2),
-            "n": int(xs.size),
+            "n": int(n_pts),
         }
 
+    # ------------------------------------------------------------------
+    h = dfc[x_name]
     neg_mask = (h < 0) & (h.abs() > core_limit)
     pos_mask = (h > 0) & (h.abs() > core_limit)
     neg = _process_branch(neg_mask, "neg")

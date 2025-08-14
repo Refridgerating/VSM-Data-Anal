@@ -364,7 +364,17 @@ class AnalysisDock(QDockWidget):
                         title="Fit Warning",
                     )
                     continue
+                if hasattr(self.manager.pane, "shade_xrange"):
+                    for br in ("neg", "pos"):
+                        win = det.get(br)
+                        if win:
+                            self.manager.pane.shade_xrange(
+                                win["hmin"], win["hmax"], label=None
+                            )
+                    self.manager.pane.draw_idle()
                 choice = prompts.confirm_detected_windows(self, label, det)
+                if choice != "auto" and hasattr(self.manager.pane, "clear_regions"):
+                    self.manager.pane.clear_regions()
                 if choice == "cancel":
                     continue
                 if choice == "manual":
@@ -383,6 +393,9 @@ class AnalysisDock(QDockWidget):
                     "neg": {"hmin": -hmax_ui, "hmax": -hmin_ui},
                     "pos": {"hmin": hmin_ui, "hmax": hmax_ui},
                 }
+
+            if hasattr(self.manager.pane, "clear_regions"):
+                self.manager.pane.clear_regions()
 
             branch_results: dict[str, dict] = {}
             for br, win in windows.items():

@@ -138,6 +138,9 @@ def confirm_detected_windows(parent: QWidget, label: str, stats: dict) -> str:
         )
     if "chi_combined" in stats:
         lines.append(f"χ_combined = {stats['chi_combined']:.3g}")
+    if stats.get("notes"):
+        lines.append("")
+        lines.extend(stats["notes"])
 
     box = QMessageBox(parent)
     box.setWindowTitle(f"Auto-detected windows - {label}")
