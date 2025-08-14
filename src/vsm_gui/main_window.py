@@ -18,10 +18,12 @@ from .file_io.parsers import load_any
 from .plotting.manager import PlotManager
 from .utils import errors
 from .utils.logging import LOG_FILE, logger
+from .utils.settings import AppSettings
 from .widgets.analysis_panel import AnalysisDock
 from .widgets.axis_mapping import AxisMappingDialog
 from .widgets.file_picker import pick_csv_files
 from .widgets.plot_pane import PlotPane
+from .widgets.format_dialog import FormatDialog
 
 from pathlib import Path
 
@@ -45,6 +47,7 @@ class MainWindow(QMainWindow):
 
         self.pane = PlotPane(self)
         self.manager = PlotManager(self.pane)
+        self.settings = AppSettings()
 
         central = QWidget(self)
         layout = QVBoxLayout(central)
@@ -80,9 +83,15 @@ class MainWindow(QMainWindow):
         legend.triggered.connect(self.pane.toggle_legend)
         self.navbar.addAction(legend)
 
+        fmt = QAction("Format Graph…", self)
+        fmt.setShortcut("Ctrl+F")
+        fmt.triggered.connect(self.open_format_dialog)
+        self.navbar.addAction(fmt)
+
         self._grid_action = grid
         self._minor_action = minor
         self._legend_action = legend
+        self._format_action = fmt
 
     def _init_menu(self) -> None:
         menu = self.menuBar()
@@ -110,6 +119,8 @@ class MainWindow(QMainWindow):
         change_axes_act.triggered.connect(self.change_axes)
         view_menu.addAction(change_axes_act)
 
+        view_menu.addAction(self._format_action)
+
         help_menu = menu.addMenu("Help")
         about_act = QAction(ABOUT_TEXT, self)
         about_act.triggered.connect(self.show_about)
@@ -117,6 +128,12 @@ class MainWindow(QMainWindow):
         show_log_act = QAction("Show Log File", self)
         show_log_act.triggered.connect(self.show_log_file)
         help_menu.addAction(show_log_act)
+
+    def open_format_dialog(self) -> None:
+        snap = self.pane.snapshot_style()
+        dialog = FormatDialog(self.pane, self.settings, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            self.pane.restore_style(snap)
 
     def open_files(self) -> None:
         try:
