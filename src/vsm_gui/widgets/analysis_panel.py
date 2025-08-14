@@ -47,7 +47,88 @@ class AnalysisDock(QDockWidget):
         widget = QWidget(self)
         layout = QVBoxLayout(widget)
 
-        # ----- Metrics controls -----
+        # ------------------------------------------------------------------
+        # Interactive metric sections
+        # ------------------------------------------------------------------
+        self.ms_group = QGroupBox("Ms (Saturation)")
+        ms_layout = QVBoxLayout(self.ms_group)
+        ms_btns = QHBoxLayout()
+        self.ms_pick = QPushButton("Pick window (drag)")
+        self.ms_reset = QPushButton("Reset")
+        self.ms_apply = QPushButton("Apply")
+        ms_btns.addWidget(self.ms_pick)
+        ms_btns.addWidget(self.ms_reset)
+        ms_btns.addWidget(self.ms_apply)
+        ms_layout.addLayout(ms_btns)
+        form = QFormLayout()
+        self.ms_hmin = QLineEdit()
+        self.ms_hmax = QLineEdit()
+        form.addRow("Hmin", self.ms_hmin)
+        form.addRow("Hmax", self.ms_hmax)
+        ms_layout.addLayout(form)
+        self.ms_label = QLabel("Ms: –   χ: –   R²: –")
+        ms_layout.addWidget(self.ms_label)
+        layout.addWidget(self.ms_group)
+
+        self.hc_group = QGroupBox("Coercivity (Hc)")
+        hc_layout = QVBoxLayout(self.hc_group)
+        hc_btns = QHBoxLayout()
+        self.hc_pick = QPushButton("Pick near-zero region (drag)")
+        self.hc_quick = QPushButton("Quick pick")
+        self.hc_reset = QPushButton("Reset")
+        self.hc_compute = QPushButton("Compute")
+        for b in (self.hc_pick, self.hc_quick, self.hc_reset, self.hc_compute):
+            hc_btns.addWidget(b)
+        hc_layout.addLayout(hc_btns)
+        self.hc_hmin = QLineEdit()
+        self.hc_hmax = QLineEdit()
+        hform = QFormLayout()
+        hform.addRow("Hmin", self.hc_hmin)
+        hform.addRow("Hmax", self.hc_hmax)
+        hc_layout.addLayout(hform)
+        self.hc_label = QLabel("Hc: –")
+        hc_layout.addWidget(self.hc_label)
+        layout.addWidget(self.hc_group)
+
+        self.mr_group = QGroupBox("Remanence (Mr)")
+        mr_layout = QVBoxLayout(self.mr_group)
+        mr_btns = QHBoxLayout()
+        self.mr_pick = QPushButton("Pick H=0 (drag)")
+        self.mr_snap = QPushButton("Snap to H=0")
+        self.mr_reset = QPushButton("Reset")
+        self.mr_compute = QPushButton("Compute")
+        for b in (self.mr_pick, self.mr_snap, self.mr_reset, self.mr_compute):
+            mr_btns.addWidget(b)
+        mr_layout.addLayout(mr_btns)
+        self.mr_x = QLineEdit("0")
+        mform = QFormLayout()
+        mform.addRow("H", self.mr_x)
+        mr_layout.addLayout(mform)
+        self.mr_label = QLabel("Mr: –")
+        mr_layout.addWidget(self.mr_label)
+        layout.addWidget(self.mr_group)
+
+        # Wire up interactive controls
+        self.ms_pick.clicked.connect(self._ms_pick)
+        self.ms_reset.clicked.connect(lambda: self.manager.pane.clear_interactive("ms_region"))
+        self.ms_apply.clicked.connect(self.apply_ms)
+        self.ms_hmin.editingFinished.connect(self._ms_text_changed)
+        self.ms_hmax.editingFinished.connect(self._ms_text_changed)
+
+        self.hc_pick.clicked.connect(self._hc_pick)
+        self.hc_quick.clicked.connect(self._hc_quick)
+        self.hc_reset.clicked.connect(lambda: self.manager.pane.clear_interactive("hc_region"))
+        self.hc_compute.clicked.connect(self.compute_hc)
+        self.hc_hmin.editingFinished.connect(self._hc_text_changed)
+        self.hc_hmax.editingFinished.connect(self._hc_text_changed)
+
+        self.mr_pick.clicked.connect(self._mr_pick)
+        self.mr_snap.clicked.connect(self._mr_snap)
+        self.mr_reset.clicked.connect(lambda: self.manager.pane.clear_interactive("mr_line"))
+        self.mr_compute.clicked.connect(self.compute_mr)
+        self.mr_x.editingFinished.connect(self._mr_text_changed)
+
+        # ---- Legacy controls retained for compatibility ----
         self.chk_ms = QCheckBox("Saturation Magnetization (Ms)")
         self.chk_hc = QCheckBox("Coercivity (Hc)")
         self.chk_mr = QCheckBox("Remanence (Mr)")
@@ -144,6 +225,160 @@ class AnalysisDock(QDockWidget):
         self.setWidget(widget)
 
     # ===== Metrics helpers =====
+    def _ms_pick(self) -> None:
+        pane = self.manager.pane
+        pane.clear_interactive()
+        region = pane.ensure_ms_region(on_changed=self._ms_region_changed, snap=True)
+        x0, x1 = region.get_bounds()
+        self.ms_hmin.setText(f"{x0:.3g}")
+        self.ms_hmax.setText(f"{x1:.3g}")
+
+    def _ms_region_changed(self, x0: float, x1: float) -> None:
+        self.ms_hmin.setText(f"{x0:.3g}")
+        self.ms_hmax.setText(f"{x1:.3g}")
+
+    def _ms_text_changed(self) -> None:
+        try:
+            h0 = float(self.ms_hmin.text())
+            h1 = float(self.ms_hmax.text())
+        except ValueError:
+            return
+        region = self.manager.pane.ensure_ms_region(on_changed=self._ms_region_changed, snap=True)
+        region.set_bounds(h0, h1)
+
+    def apply_ms(self) -> None:
+        try:
+            h0 = float(self.ms_hmin.text())
+            h1 = float(self.ms_hmax.text())
+        except ValueError:
+            QMessageBox.warning(self, "Invalid", "Hmin/Hmax must be numeric")
+            return
+        pane = self.manager.pane
+        datasets = self.manager.get_datasets()
+        x_name, y_name = self.manager.get_axis_names()
+        if not datasets or x_name is None or y_name is None:
+            return
+        pane.clear_markers()
+        results = []
+        for item in datasets:
+            df = item["df"]
+            try:
+                ms, chi, r2, _ = metrics.fit_ms_linear(df, x_name, y_name, h0, h1)
+                results.append((ms, chi, r2))
+                if self.marker_chk.isChecked():
+                    pane.add_marker(0.0, ms, f"{item['label']}")
+            except Exception as exc:  # noqa: BLE001
+                QMessageBox.warning(self, "Ms error", str(exc))
+                return
+        if results:
+            ms, chi, r2 = results[0]
+            self.ms_label.setText(f"Ms: {ms:.3g}   χ: {chi:.3g}   R²: {r2:.3f}")
+
+    def _hc_pick(self) -> None:
+        pane = self.manager.pane
+        pane.clear_interactive()
+        region = pane.ensure_hc_region(on_changed=self._hc_region_changed, snap=True)
+        x0, x1 = region.get_bounds()
+        self.hc_hmin.setText(f"{x0:.3g}")
+        self.hc_hmax.setText(f"{x1:.3g}")
+
+    def _hc_region_changed(self, x0: float, x1: float) -> None:
+        self.hc_hmin.setText(f"{x0:.3g}")
+        self.hc_hmax.setText(f"{x1:.3g}")
+
+    def _hc_text_changed(self) -> None:
+        try:
+            h0 = float(self.hc_hmin.text())
+            h1 = float(self.hc_hmax.text())
+        except ValueError:
+            return
+        region = self.manager.pane.ensure_hc_region(on_changed=self._hc_region_changed, snap=True)
+        region.set_bounds(h0, h1)
+
+    def _hc_quick(self) -> None:
+        self.manager.pane.clear_interactive()
+        self.hc_hmin.clear(); self.hc_hmax.clear()
+        self.compute_hc()
+
+    def compute_hc(self) -> None:
+        pane = self.manager.pane
+        datasets = self.manager.get_datasets()
+        x_name, y_name = self.manager.get_axis_names()
+        if not datasets or x_name is None or y_name is None:
+            return
+        pane.clear_markers()
+        hwin = None
+        if self.hc_hmin.text() and self.hc_hmax.text():
+            try:
+                h0 = float(self.hc_hmin.text())
+                h1 = float(self.hc_hmax.text())
+                hwin = (h0, h1)
+            except ValueError:
+                QMessageBox.warning(self, "Invalid", "Hmin/Hmax must be numeric")
+                return
+        results = []
+        for item in datasets:
+            df = item["df"]
+            try:
+                hc, det = metrics.coercivity(df, x_name, y_name, hwin=hwin)
+                results.append(hc)
+                if self.marker_chk.isChecked():
+                    pane.add_vline(det["Hc_pos"], "+Hc")
+                    pane.add_vline(det["Hc_neg"], "-Hc")
+            except Exception as exc:  # noqa: BLE001
+                QMessageBox.warning(self, "Hc error", str(exc))
+                return
+        if results:
+            self.hc_label.setText(f"Hc: ±{results[0]:.3g}")
+
+    def _mr_pick(self) -> None:
+        pane = self.manager.pane
+        pane.clear_interactive()
+        line = pane.ensure_mr_line(on_changed=self._mr_line_changed, snap=True)
+        self.mr_x.setText(f"{line.get_x():.3g}")
+
+    def _mr_line_changed(self, x: float) -> None:
+        self.mr_x.setText(f"{x:.3g}")
+
+    def _mr_text_changed(self) -> None:
+        try:
+            x = float(self.mr_x.text())
+        except ValueError:
+            return
+        line = self.manager.pane.ensure_mr_line(on_changed=self._mr_line_changed, snap=True)
+        line.set_x(x)
+
+    def _mr_snap(self) -> None:
+        self.mr_x.setText("0")
+        line = self.manager.pane.ensure_mr_line(on_changed=self._mr_line_changed, snap=True)
+        line.set_x(0.0)
+
+    def compute_mr(self) -> None:
+        pane = self.manager.pane
+        datasets = self.manager.get_datasets()
+        x_name, y_name = self.manager.get_axis_names()
+        if not datasets or x_name is None or y_name is None:
+            return
+        pane.clear_markers()
+        try:
+            h0 = float(self.mr_x.text())
+        except ValueError:
+            QMessageBox.warning(self, "Invalid", "H must be numeric")
+            return
+        results = []
+        for item in datasets:
+            df = item["df"]
+            try:
+                mr, _ = metrics.remanence(df, x_name, y_name, h0=h0)
+                results.append(mr)
+                if self.marker_chk.isChecked():
+                    pane.add_marker(h0, mr, f"{item['label']}")
+            except Exception as exc:  # noqa: BLE001
+                QMessageBox.warning(self, "Mr error", str(exc))
+                return
+        if results:
+            self.mr_label.setText(f"Mr: {results[0]:.3g}")
+
     def _get_window(self) -> tuple[float, float] | None:
         text, ok = QInputDialog.getText(self, "High-field Window", "Hmin,Hmax (leave blank for default)")
         if not ok or not text.strip():

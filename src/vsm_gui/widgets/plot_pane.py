@@ -9,8 +9,10 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.lines import Line2D
 from matplotlib.axes import Axes
 
+from ..utils.cursors import DraggableRegion, DraggableVLine
+
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 plt.style.use("dark_background")
 plt.rcParams.update({"font.size": 10, "grid.alpha": 0.3})
@@ -35,8 +37,14 @@ class PlotPane(FigureCanvasQTAgg):
 
         self._annotation = None
         self._cursor_line: Line2D | None = None
-        self._markers: list[Artist] = []
-        self._regions: list[Artist] = []
+
+        self._interactive: dict[str, object | list[Artist]] = {
+            "ms_region": None,
+            "hc_region": None,
+            "mr_line": None,
+            "markers": [],
+            "regions": [],
+        }
 
         self.toggle_grid(True)
         self.toggle_minor_ticks(True)
@@ -49,6 +57,13 @@ class PlotPane(FigureCanvasQTAgg):
         self.toggle_minor_ticks(self._minor_on)
         self._annotation = None
         self._cursor_line = None
+
+        for key in ("ms_region", "hc_region", "mr_line"):
+            obj = self._interactive.get(key)
+            if obj:
+                obj.set_axes(self.axes)
+                obj.set_visible(False)
+
         self.clear_markers()
         self.clear_regions()
         self.draw_idle()
@@ -268,6 +283,113 @@ class PlotPane(FigureCanvasQTAgg):
         self.autoscale()
 
     # ------------------------------------------------------------------
+    # Interactive helpers
+    # ------------------------------------------------------------------
+    def ensure_ms_region(
+        self,
+        x0: float | None = None,
+        x1: float | None = None,
+        on_changed: Callable[[float, float], None] | None = None,
+        snap: bool = False,
+    ) -> DraggableRegion:
+        snap_fn = self.snap_to_nearest_x if snap else None
+        region: DraggableRegion | None = self._interactive.get("ms_region")  # type: ignore[assignment]
+        if region is None:
+            region = DraggableRegion(
+                self.axes,
+                x0 or 0.0,
+                x1 or 0.0,
+                color="yellow",
+                on_changed=on_changed,
+                snap_fn=snap_fn,
+            )
+            self._interactive["ms_region"] = region
+        else:
+            region.set_axes(self.axes)
+            if x0 is not None and x1 is not None:
+                region.set_bounds(x0, x1)
+            region.on_changed = on_changed  # type: ignore[attr-defined]
+        region.set_visible(True)
+        return region
+
+    def ensure_hc_region(
+        self,
+        x0: float | None = None,
+        x1: float | None = None,
+        on_changed: Callable[[float, float], None] | None = None,
+        snap: bool = False,
+    ) -> DraggableRegion:
+        snap_fn = self.snap_to_nearest_x if snap else None
+        region: DraggableRegion | None = self._interactive.get("hc_region")  # type: ignore[assignment]
+        if region is None:
+            region = DraggableRegion(
+                self.axes,
+                x0 or -1.0,
+                x1 or 1.0,
+                color="cyan",
+                on_changed=on_changed,
+                snap_fn=snap_fn,
+            )
+            self._interactive["hc_region"] = region
+        else:
+            region.set_axes(self.axes)
+            if x0 is not None and x1 is not None:
+                region.set_bounds(x0, x1)
+            region.on_changed = on_changed  # type: ignore[attr-defined]
+        region.set_visible(True)
+        return region
+
+    def ensure_mr_line(
+        self,
+        x: float = 0.0,
+        on_changed: Callable[[float], None] | None = None,
+        snap: bool = False,
+    ) -> DraggableVLine:
+        snap_fn = self.snap_to_nearest_x if snap else None
+        line: DraggableVLine | None = self._interactive.get("mr_line")  # type: ignore[assignment]
+        if line is None:
+            line = DraggableVLine(
+                self.axes,
+                x,
+                color="magenta",
+                on_changed=on_changed,
+                snap_fn=snap_fn,
+            )
+            self._interactive["mr_line"] = line
+        else:
+            line.set_axes(self.axes)
+            line.set_x(x)
+            line.on_changed = on_changed
+        line.set_visible(True)
+        return line
+
+    def clear_interactive(self, kind: str | None = None) -> None:
+        keys = ["ms_region", "hc_region", "mr_line"] if kind is None else [kind]
+        for k in keys:
+            obj = self._interactive.get(k)
+            if obj:
+                obj.remove()
+                self._interactive[k] = None
+        if kind is None:
+            self.clear_markers()
+            self.clear_regions()
+
+    def snap_to_nearest_x(self, x: float) -> float:
+        best = x
+        dist = float("inf")
+        for line in self.get_lines():
+            xs = line.get_xdata()
+            if xs.size == 0:
+                continue
+            idx = int(np.argmin(np.abs(xs - x)))
+            val = float(xs[idx])
+            d = abs(val - x)
+            if d < dist:
+                dist = d
+                best = val
+        return best
+
+    # ------------------------------------------------------------------
     # Marker helpers
     # ------------------------------------------------------------------
     def add_marker(self, x: float, y: float, label: str) -> list[Artist]:
@@ -279,57 +401,57 @@ class PlotPane(FigureCanvasQTAgg):
             xytext=(5, 5),
             textcoords="offset points",
         )
-        self._markers.extend([pt, txt])
+        self._interactive["markers"].extend([pt, txt])
         return [pt, txt]
 
     def add_vline(self, x: float, label: str | None = None) -> Artist:
         """Draw a vertical reference line."""
         line = self.axes.axvline(x, linestyle="--")
-        self._markers.append(line)
+        self._interactive["markers"].append(line)
         if label:
             ylim = self.axes.get_ylim()
             txt = self.axes.text(x, ylim[1], label, va="bottom")
-            self._markers.append(txt)
+            self._interactive["markers"].append(txt)
         return line
 
     def add_hline(self, y: float, label: str | None = None) -> Artist:
         """Draw a horizontal reference line."""
         line = self.axes.axhline(y, linestyle="--")
-        self._markers.append(line)
+        self._interactive["markers"].append(line)
         if label:
             xlim = self.axes.get_xlim()
             txt = self.axes.text(xlim[1], y, label, ha="left", va="center")
-            self._markers.append(txt)
+            self._interactive["markers"].append(txt)
         return line
 
     def clear_markers(self) -> None:
         """Remove any previously added markers/annotations."""
-        for art in self._markers:
+        for art in list(self._interactive["markers"]):
             try:
                 art.remove()
             except Exception:  # noqa: BLE001
                 pass
-        self._markers.clear()
+        self._interactive["markers"].clear()
         self.draw_idle()
 
     def shade_xrange(self, x0: float, x1: float, label: str | None = None) -> None:
         """Shade a range on the x-axis for visualising fit windows."""
         region = self.axes.axvspan(x0, x1, color="gray", alpha=0.2)
-        self._regions.append(region)
+        self._interactive["regions"].append(region)
         if label:
             ylim = self.axes.get_ylim()
             txt = self.axes.text((x0 + x1) / 2, ylim[1], label, ha="center", va="bottom")
-            self._regions.append(txt)
+            self._interactive["regions"].append(txt)
         self.draw_idle()
 
     def clear_regions(self) -> None:
         """Remove previously shaded x-ranges."""
-        for art in self._regions:
+        for art in list(self._interactive["regions"]):
             try:
                 art.remove()
             except Exception:  # noqa: BLE001
                 pass
-        self._regions.clear()
+        self._interactive["regions"].clear()
         self.draw_idle()
 
     def toggle_grid(self, enabled: bool) -> None:
