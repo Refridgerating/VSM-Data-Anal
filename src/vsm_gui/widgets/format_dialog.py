@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict
 
+import numpy as np
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
@@ -15,6 +16,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPushButton,
     QSpinBox,
     QTableWidget,
@@ -214,33 +216,33 @@ class FormatDialog(QDialog):
     # ------------------------------------------------------------------
     def _load_from_settings(self) -> None:
         ax = self.pane.axes
-        self.x_label_edit.setText(self.settings.get("axes/xlabel", ax.get_xlabel()))
-        self.y_label_edit.setText(self.settings.get("axes/ylabel", ax.get_ylabel()))
+        self.x_label_edit.setText(self.settings.get_str("axes/xlabel", ax.get_xlabel()))
+        self.y_label_edit.setText(self.settings.get_str("axes/ylabel", ax.get_ylabel()))
         xlim = ax.get_xlim()
         ylim = ax.get_ylim()
-        self.xmin_spin.setValue(self.settings.get("axes/xmin", xlim[0]))
-        self.xmax_spin.setValue(self.settings.get("axes/xmax", xlim[1]))
-        self.ymin_spin.setValue(self.settings.get("axes/ymin", ylim[0]))
-        self.ymax_spin.setValue(self.settings.get("axes/ymax", ylim[1]))
-        self.auto_x_chk.setChecked(self.settings.get("axes/auto_x", True))
-        self.auto_y_chk.setChecked(self.settings.get("axes/auto_y", True))
-        self.xscale_combo.setCurrentText(self.settings.get("axes/xscale", ax.get_xscale()))
-        self.yscale_combo.setCurrentText(self.settings.get("axes/yscale", ax.get_yscale()))
-        self.grid_chk.setChecked(self.settings.get("axes/grid", True))
-        self.minor_chk.setChecked(self.settings.get("axes/minor", True))
-        self.label_fs_spin.setValue(int(self.settings.get("axes/label_fs", ax.xaxis.label.get_fontsize())))
-        self.tick_fs_spin.setValue(int(self.settings.get("axes/tick_fs", ax.xaxis.get_ticklabels()[0].get_fontsize() if ax.xaxis.get_ticklabels() else 10)))
+        self.xmin_spin.setValue(self.settings.get_float("axes/xmin", xlim[0]))
+        self.xmax_spin.setValue(self.settings.get_float("axes/xmax", xlim[1]))
+        self.ymin_spin.setValue(self.settings.get_float("axes/ymin", ylim[0]))
+        self.ymax_spin.setValue(self.settings.get_float("axes/ymax", ylim[1]))
+        self.auto_x_chk.setChecked(self.settings.get_bool("axes/auto_x", True))
+        self.auto_y_chk.setChecked(self.settings.get_bool("axes/auto_y", True))
+        self.xscale_combo.setCurrentText(self.settings.get_str("axes/xscale", ax.get_xscale()))
+        self.yscale_combo.setCurrentText(self.settings.get_str("axes/yscale", ax.get_yscale()))
+        self.grid_chk.setChecked(self.settings.get_bool("axes/grid", True))
+        self.minor_chk.setChecked(self.settings.get_bool("axes/minor", True))
+        self.label_fs_spin.setValue(self.settings.get_int("axes/label_fs", 12))
+        self.tick_fs_spin.setValue(self.settings.get_int("axes/tick_fs", 10))
 
         legend = self.pane.axes.get_legend()
-        self.legend_show_chk.setChecked(self.settings.get("legend/show", legend is not None))
-        self.legend_loc_combo.setCurrentText(self.settings.get("legend/loc", "best"))
-        self.legend_frame_chk.setChecked(self.settings.get("legend/frame", False))
-        self.legend_fs_spin.setValue(int(self.settings.get("legend/fs", 10)))
+        self.legend_show_chk.setChecked(self.settings.get_bool("legend/show", legend is not None))
+        self.legend_loc_combo.setCurrentText(self.settings.get_str("legend/loc", "best"))
+        self.legend_frame_chk.setChecked(self.settings.get_bool("legend/frame", False))
+        self.legend_fs_spin.setValue(self.settings.get_int("legend/fs", 10))
 
-        self.title_edit.setText(self.settings.get("layout/title", self.pane.axes.get_title()))
-        self.dpi_spin.setValue(int(self.settings.get("layout/dpi", int(self.pane.figure.get_dpi()))))
-        self.tight_chk.setChecked(self.settings.get("layout/tight", False))
-        self.style_combo.setCurrentText(self.settings.get("style/preset", "Default"))
+        self.title_edit.setText(self.settings.get_str("layout/title", self.pane.axes.get_title()))
+        self.dpi_spin.setValue(self.settings.get_int("layout/dpi", int(self.pane.figure.get_dpi())))
+        self.tight_chk.setChecked(self.settings.get_bool("layout/tight", False))
+        self.style_combo.setCurrentText(self.settings.get_str("style/preset", "Default"))
 
         # Populate trace table
         lines = self.pane.get_lines()
@@ -301,6 +303,16 @@ class FormatDialog(QDialog):
         self.settings.set("style/preset", self.style_combo.currentText())
 
     def _apply_axis(self) -> None:
+        # Validate limits for log scales
+        if self.xscale_combo.currentText() == "log" and self.xmin_spin.value() <= 0:
+            QMessageBox.warning(self, "Invalid X Limit", "Log scale requires positive minimum; adjusted.")
+            xmin = max(self.xmin_spin.value(), np.finfo(float).tiny)
+            self.xmin_spin.setValue(xmin)
+        if self.yscale_combo.currentText() == "log" and self.ymin_spin.value() <= 0:
+            QMessageBox.warning(self, "Invalid Y Limit", "Log scale requires positive minimum; adjusted.")
+            ymin = max(self.ymin_spin.value(), np.finfo(float).tiny)
+            self.ymin_spin.setValue(ymin)
+
         self.pane.set_labels(self.x_label_edit.text(), self.y_label_edit.text())
         self.pane.set_limits(
             self.xmin_spin.value(),
@@ -331,9 +343,9 @@ class FormatDialog(QDialog):
                 markersize=tw.msize.value(),
             )
             self.settings.set(f"traces/{label}/color", color)
-            self.settings.set(f"traces/{label}/linewidth", tw.width.value())
+            self.settings.set(f"traces/{label}/linewidth", float(tw.width.value()))
             self.settings.set(f"traces/{label}/marker", tw.marker.currentText())
-            self.settings.set(f"traces/{label}/markersize", tw.msize.value())
+            self.settings.set(f"traces/{label}/markersize", int(tw.msize.value()))
 
     def _apply_legend(self) -> None:
         self.pane.set_legend(
@@ -351,8 +363,8 @@ class FormatDialog(QDialog):
         preset = self.style_combo.currentText()
         self.pane.apply_rc_preset(preset)
         self.settings.set("layout/title", self.title_edit.text())
-        self.settings.set("layout/dpi", self.dpi_spin.value())
-        self.settings.set("layout/tight", self.tight_chk.isChecked())
+        self.settings.set("layout/dpi", int(self.dpi_spin.value()))
+        self.settings.set("layout/tight", bool(self.tight_chk.isChecked()))
         self.settings.set("style/preset", preset)
 
     def _apply_all(self) -> None:
@@ -365,22 +377,22 @@ class FormatDialog(QDialog):
         # Persist axes/legend settings
         self.settings.set("axes/xlabel", self.x_label_edit.text())
         self.settings.set("axes/ylabel", self.y_label_edit.text())
-        self.settings.set("axes/xmin", self.xmin_spin.value())
-        self.settings.set("axes/xmax", self.xmax_spin.value())
-        self.settings.set("axes/ymin", self.ymin_spin.value())
-        self.settings.set("axes/ymax", self.ymax_spin.value())
-        self.settings.set("axes/auto_x", self.auto_x_chk.isChecked())
-        self.settings.set("axes/auto_y", self.auto_y_chk.isChecked())
+        self.settings.set("axes/xmin", float(self.xmin_spin.value()))
+        self.settings.set("axes/xmax", float(self.xmax_spin.value()))
+        self.settings.set("axes/ymin", float(self.ymin_spin.value()))
+        self.settings.set("axes/ymax", float(self.ymax_spin.value()))
+        self.settings.set("axes/auto_x", bool(self.auto_x_chk.isChecked()))
+        self.settings.set("axes/auto_y", bool(self.auto_y_chk.isChecked()))
         self.settings.set("axes/xscale", self.xscale_combo.currentText())
         self.settings.set("axes/yscale", self.yscale_combo.currentText())
-        self.settings.set("axes/grid", self.grid_chk.isChecked())
-        self.settings.set("axes/minor", self.minor_chk.isChecked())
-        self.settings.set("axes/label_fs", self.label_fs_spin.value())
-        self.settings.set("axes/tick_fs", self.tick_fs_spin.value())
-        self.settings.set("legend/show", self.legend_show_chk.isChecked())
+        self.settings.set("axes/grid", bool(self.grid_chk.isChecked()))
+        self.settings.set("axes/minor", bool(self.minor_chk.isChecked()))
+        self.settings.set("axes/label_fs", int(self.label_fs_spin.value()))
+        self.settings.set("axes/tick_fs", int(self.tick_fs_spin.value()))
+        self.settings.set("legend/show", bool(self.legend_show_chk.isChecked()))
         self.settings.set("legend/loc", self.legend_loc_combo.currentText())
-        self.settings.set("legend/frame", self.legend_frame_chk.isChecked())
-        self.settings.set("legend/fs", self.legend_fs_spin.value())
+        self.settings.set("legend/frame", bool(self.legend_frame_chk.isChecked()))
+        self.settings.set("legend/fs", int(self.legend_fs_spin.value()))
 
     # ------------------------------------------------------------------
     # Dialog button handlers
