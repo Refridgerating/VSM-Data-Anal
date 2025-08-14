@@ -18,6 +18,7 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
+    QToolBox,
     QVBoxLayout,
     QWidget,
 )
@@ -46,12 +47,14 @@ class AnalysisDock(QDockWidget):
 
         widget = QWidget(self)
         layout = QVBoxLayout(widget)
+        self.toolbox = QToolBox(widget)
+        layout.addWidget(self.toolbox)
 
         # ------------------------------------------------------------------
-        # Interactive metric sections
+        # Ms (Saturation)
         # ------------------------------------------------------------------
-        self.ms_group = QGroupBox("Ms (Saturation)")
-        ms_layout = QVBoxLayout(self.ms_group)
+        ms_page = QWidget()
+        ms_layout = QVBoxLayout(ms_page)
         ms_btns = QHBoxLayout()
         self.ms_pick = QPushButton("Pick window (drag)")
         self.ms_reset = QPushButton("Reset")
@@ -68,10 +71,13 @@ class AnalysisDock(QDockWidget):
         ms_layout.addLayout(form)
         self.ms_label = QLabel("Ms: –   χ: –   R²: –")
         ms_layout.addWidget(self.ms_label)
-        layout.addWidget(self.ms_group)
+        self.toolbox.addItem(ms_page, "Ms (Saturation)")
 
-        self.hc_group = QGroupBox("Coercivity (Hc)")
-        hc_layout = QVBoxLayout(self.hc_group)
+        # ------------------------------------------------------------------
+        # Coercivity (Hc)
+        # ------------------------------------------------------------------
+        hc_page = QWidget()
+        hc_layout = QVBoxLayout(hc_page)
         hc_btns = QHBoxLayout()
         self.hc_pick = QPushButton("Pick near-zero region (drag)")
         self.hc_quick = QPushButton("Quick pick")
@@ -88,10 +94,13 @@ class AnalysisDock(QDockWidget):
         hc_layout.addLayout(hform)
         self.hc_label = QLabel("Hc: –")
         hc_layout.addWidget(self.hc_label)
-        layout.addWidget(self.hc_group)
+        self.toolbox.addItem(hc_page, "Coercivity (Hc)")
 
-        self.mr_group = QGroupBox("Remanence (Mr)")
-        mr_layout = QVBoxLayout(self.mr_group)
+        # ------------------------------------------------------------------
+        # Remanence (Mr)
+        # ------------------------------------------------------------------
+        mr_page = QWidget()
+        mr_layout = QVBoxLayout(mr_page)
         mr_btns = QHBoxLayout()
         self.mr_pick = QPushButton("Pick H=0 (drag)")
         self.mr_snap = QPushButton("Snap to H=0")
@@ -106,7 +115,7 @@ class AnalysisDock(QDockWidget):
         mr_layout.addLayout(mform)
         self.mr_label = QLabel("Mr: –")
         mr_layout.addWidget(self.mr_label)
-        layout.addWidget(self.mr_group)
+        self.toolbox.addItem(mr_page, "Remanence (Mr)")
 
         # Wire up interactive controls
         self.ms_pick.clicked.connect(self._ms_pick)
@@ -129,22 +138,24 @@ class AnalysisDock(QDockWidget):
         self.mr_x.editingFinished.connect(self._mr_text_changed)
 
         # ---- Legacy controls retained for compatibility ----
+        analysis_page = QWidget()
+        analysis_layout = QVBoxLayout(analysis_page)
         self.chk_ms = QCheckBox("Saturation Magnetization (Ms)")
         self.chk_hc = QCheckBox("Coercivity (Hc)")
         self.chk_mr = QCheckBox("Remanence (Mr)")
         self.chk_ku = QCheckBox("Anisotropy Constant (Ku)")
         for w in (self.chk_ms, self.chk_hc, self.chk_mr, self.chk_ku):
-            layout.addWidget(w)
+            analysis_layout.addWidget(w)
 
         self.marker_chk = QCheckBox("Show markers on plot")
         self.marker_chk.setChecked(True)
         self.marker_chk.stateChanged.connect(
             lambda s: self._toggle_markers(s == Qt.CheckState.Checked)
         )
-        layout.addWidget(self.marker_chk)
+        analysis_layout.addWidget(self.marker_chk)
 
         self.convert_chk = QCheckBox("Convert to A/m")
-        layout.addWidget(self.convert_chk)
+        analysis_layout.addWidget(self.convert_chk)
 
         self.demag_chk = QCheckBox("Apply demag correction")
         self.geometry_combo = QComboBox()
@@ -153,17 +164,17 @@ class AnalysisDock(QDockWidget):
         self.demag_chk.stateChanged.connect(
             lambda s: self.geometry_combo.setEnabled(s == Qt.CheckState.Checked)
         )
-        layout.addWidget(self.demag_chk)
-        layout.addWidget(self.geometry_combo)
+        analysis_layout.addWidget(self.demag_chk)
+        analysis_layout.addWidget(self.geometry_combo)
 
         btn_compute = QPushButton("Compute")
         btn_compute.clicked.connect(self.compute)
-        layout.addWidget(btn_compute)
+        analysis_layout.addWidget(btn_compute)
 
         self.table = QTableWidget(0, 6)
         self.table.setHorizontalHeaderLabels(["File", "Ms", "Hc", "Mr", "Ku", "Notes"])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        layout.addWidget(self.table)
+        analysis_layout.addWidget(self.table)
 
         row = QHBoxLayout()
         btn_copy = QPushButton("Copy Results")
@@ -172,13 +183,14 @@ class AnalysisDock(QDockWidget):
         btn_export.clicked.connect(self.export_csv)
         row.addWidget(btn_copy)
         row.addWidget(btn_export)
-        layout.addLayout(row)
+        analysis_layout.addLayout(row)
+        self.toolbox.addItem(analysis_page, "Analysis")
 
         # ----- Corrections: Paramagnetic subtraction -----
-        corrections = QGroupBox("Corrections", self)
-        corr_layout = QVBoxLayout(corrections)
+        corr_page = QWidget()
+        corr_layout = QVBoxLayout(corr_page)
 
-        paramag_group = QGroupBox("Paramagnetic subtraction", corrections)
+        paramag_group = QGroupBox("Paramagnetic subtraction", corr_page)
         form = QFormLayout(paramag_group)
 
         info = QLabel(
@@ -214,8 +226,8 @@ class AnalysisDock(QDockWidget):
         form.addRow(self.chi_label, self.b_label)
 
         corr_layout.addWidget(paramag_group)
-        layout.addWidget(corrections)
-        layout.addStretch(1)
+        corr_layout.addStretch(1)
+        self.toolbox.addItem(corr_page, "Corrections")
 
         # Wire up correction actions
         self.fit_btn.clicked.connect(self.fit_and_preview)
