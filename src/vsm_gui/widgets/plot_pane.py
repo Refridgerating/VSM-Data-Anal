@@ -7,6 +7,7 @@ from matplotlib.artist import Artist
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.lines import Line2D
+from matplotlib.axes import Axes
 
 from pathlib import Path
 from typing import Optional
@@ -26,6 +27,11 @@ class PlotPane(FigureCanvasQTAgg):
         self._grid_on = True
         self._minor_on = True
         self._legend_on = True
+
+        # Map of display label -> Line2D instance.  Display label is unique even
+        # if the user supplies duplicate labels.  This allows the formatting
+        # dialog to target a specific trace reliably.
+        self._line_map: dict[str, Line2D] = {}
 
         self._annotation = None
         self._cursor_line: Line2D | None = None
@@ -51,7 +57,15 @@ class PlotPane(FigureCanvasQTAgg):
         self, df: pd.DataFrame, x: str, y: str, label: str, color: str | None = None
     ) -> None:
         """Plot a dataframe on the canvas."""
+        # Ensure each line has a unique label for the legend / formatting table.
+        base_label = label
+        if base_label in self._line_map:
+            idx = 2
+            while f"{base_label} #{idx}" in self._line_map:
+                idx += 1
+            label = f"{base_label} #{idx}"
         (line,) = self.axes.plot(df[x], df[y], label=label, color=color)
+        self._line_map[label] = line
         line.set_picker(True)
         if self._legend_on:
             self.axes.legend(loc="best")
@@ -61,6 +75,182 @@ class PlotPane(FigureCanvasQTAgg):
         """Set axes labels."""
         self.axes.set_xlabel(xlabel)
         self.axes.set_ylabel(ylabel)
+        self.draw_idle()
+
+    # ------------------------------------------------------------------
+    # API for formatting dialog
+    # ------------------------------------------------------------------
+
+    def get_axes(self) -> Axes:
+        return self.axes
+
+    def get_lines(self) -> list[Line2D]:
+        return list(self._line_map.values())
+
+    def set_title(self, title: str) -> None:
+        self.axes.set_title(title)
+        self.draw_idle()
+
+    def set_limits(
+        self,
+        xmin: float | None,
+        xmax: float | None,
+        ymin: float | None,
+        ymax: float | None,
+        auto_x: bool,
+        auto_y: bool,
+    ) -> None:
+        if auto_x:
+            self.axes.autoscale(enable=True, axis="x", tight=False)
+        else:
+            self.axes.set_xlim(left=xmin, right=xmax)
+        if auto_y:
+            self.axes.autoscale(enable=True, axis="y", tight=False)
+        else:
+            self.axes.set_ylim(bottom=ymin, top=ymax)
+        self.draw_idle()
+
+    def set_scale(self, xscale: str, yscale: str) -> None:
+        self.axes.set_xscale(xscale)
+        self.axes.set_yscale(yscale)
+        self.draw_idle()
+
+    def set_grid(self, show: bool, minor: bool) -> None:
+        self.toggle_grid(show)
+        self.toggle_minor_ticks(minor)
+
+    def set_tick_fontsize(self, size: int) -> None:
+        for tick in self.axes.xaxis.get_major_ticks() + self.axes.yaxis.get_major_ticks():
+            tick.label1.set_fontsize(size)
+            tick.label2.set_fontsize(size)
+        self.draw_idle()
+
+    def set_label_fontsize(self, size: int) -> None:
+        self.axes.xaxis.label.set_fontsize(size)
+        self.axes.yaxis.label.set_fontsize(size)
+        self.draw_idle()
+
+    def set_legend(self, show: bool, loc: str, frame: bool, fontsize: int) -> None:
+        legend = self.axes.get_legend()
+        handles, labels = self.axes.get_legend_handles_labels()
+        if show and handles:
+            legend = self.axes.legend(loc=loc, frameon=frame, fontsize=fontsize)
+        elif legend:
+            legend.remove()
+        self._legend_on = show
+        self.draw_idle()
+
+    def apply_trace_style(
+        self,
+        label: str,
+        *,
+        color=None,
+        linewidth=None,
+        marker=None,
+        markersize=None,
+    ) -> None:
+        line = self._line_map.get(label)
+        if not line:
+            return
+        if color is not None:
+            line.set_color(color)
+        if linewidth is not None:
+            line.set_linewidth(float(linewidth))
+        if marker is not None:
+            line.set_marker(marker if marker != "None" else "")
+        if markersize is not None:
+            line.set_markersize(int(markersize))
+        self.draw_idle()
+
+    _RC_PRESETS: dict[str, dict] = {
+        "Default": {},
+        "Presentation": {
+            "font.size": 14,
+            "axes.titlesize": 16,
+            "axes.labelsize": 14,
+            "legend.fontsize": 12,
+            "lines.linewidth": 1.5,
+        },
+        "Print (B/W)": {
+            "lines.linewidth": 1.0,
+            "axes.prop_cycle": plt.cycler(color=["black", "dimgray", "gray"]),
+        },
+        "Dark": {
+            "axes.facecolor": "#222222",
+            "figure.facecolor": "#222222",
+            "axes.grid": True,
+            "grid.color": "#888888",
+        },
+    }
+
+    def apply_rc_preset(self, name: str) -> None:
+        preset = self._RC_PRESETS.get(name, {})
+        plt.rcParams.update(preset)
+        self.draw_idle()
+
+    # ------------------------------------------------------------------
+    # Snapshot/restore helpers
+    # ------------------------------------------------------------------
+
+    def snapshot_style(self) -> dict:
+        lines = {
+            lbl: {
+                "color": ln.get_color(),
+                "linewidth": ln.get_linewidth(),
+                "marker": ln.get_marker(),
+                "markersize": ln.get_markersize(),
+            }
+            for lbl, ln in self._line_map.items()
+        }
+        legend = self.axes.get_legend()
+        legend_state = None
+        if legend:
+            legend_state = {
+                "loc": legend._loc,  # noqa: SLF001 - internal but fine
+                "frameon": legend.get_frame_on(),
+                "fontsize": legend.get_texts()[0].get_fontsize() if legend.get_texts() else 10,
+                "visible": True,
+            }
+        else:
+            legend_state = {"visible": False}
+        return {
+            "xlabel": self.axes.get_xlabel(),
+            "ylabel": self.axes.get_ylabel(),
+            "title": self.axes.get_title(),
+            "xlim": self.axes.get_xlim(),
+            "ylim": self.axes.get_ylim(),
+            "xscale": self.axes.get_xscale(),
+            "yscale": self.axes.get_yscale(),
+            "grid": self._grid_on,
+            "minor": self._minor_on,
+            "tick_fs": self.axes.xaxis.get_ticklabels()[0].get_fontsize() if self.axes.xaxis.get_ticklabels() else 10,
+            "label_fs": self.axes.xaxis.label.get_fontsize(),
+            "legend": legend_state,
+            "lines": lines,
+        }
+
+    def restore_style(self, state: dict) -> None:
+        self.set_labels(state.get("xlabel", ""), state.get("ylabel", ""))
+        self.set_title(state.get("title", ""))
+        xlim = state.get("xlim")
+        ylim = state.get("ylim")
+        if xlim:
+            self.axes.set_xlim(xlim)
+        if ylim:
+            self.axes.set_ylim(ylim)
+        self.set_scale(state.get("xscale", "linear"), state.get("yscale", "linear"))
+        self.set_grid(state.get("grid", True), state.get("minor", True))
+        self.set_tick_fontsize(int(state.get("tick_fs", 10)))
+        self.set_label_fontsize(int(state.get("label_fs", 10)))
+        legend = state.get("legend", {})
+        self.set_legend(
+            legend.get("visible", False),
+            legend.get("loc", "best"),
+            legend.get("frameon", False),
+            int(legend.get("fontsize", 10)),
+        )
+        for lbl, style in state.get("lines", {}).items():
+            self.apply_trace_style(lbl, **style)
         self.draw_idle()
 
     def export_png(self, path: Path) -> None:
