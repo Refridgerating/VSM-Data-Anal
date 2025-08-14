@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+"""Numerical helpers for extracting magnetic metrics."""
+
 import numpy as np
 import pandas as pd
 
@@ -9,6 +11,10 @@ def _prepare_series(series: pd.Series) -> np.ndarray:
     s = pd.to_numeric(series, errors="coerce").dropna()
     return s.to_numpy()
 
+
+# ---------------------------------------------------------------------------
+# Legacy helper retained for backwards compatibility ------------------------
+# ---------------------------------------------------------------------------
 
 def saturation_magnetization(
     df: pd.DataFrame,
@@ -21,9 +27,8 @@ def saturation_magnetization(
 ) -> tuple[float, dict]:
     """Estimate saturation magnetisation via high-field linear regression.
 
-    A linear model ``M ≈ Ms + χH`` is fitted on the high-field tails. If a
-    ``window`` is not provided the fit uses points where ``|H|`` falls in the
-    upper quantile ``q`` (default 0.8).
+    This is the previous public helper.  New code should prefer
+    :func:`fit_ms_linear` with explicit window selection.
     """
     h = _prepare_series(df[x_name])
     m = _prepare_series(df[y_name])
@@ -48,7 +53,7 @@ def saturation_magnetization(
     x_fit = np.abs(x)
     y_fit = np.sign(x) * y
     A = np.column_stack([np.ones_like(x_fit), x_fit])
-    coeffs, residuals, rank, s = np.linalg.lstsq(A, y_fit, rcond=None)
+    coeffs, residuals, _, _ = np.linalg.lstsq(A, y_fit, rcond=None)
     ms, chi = coeffs[0], coeffs[1]
     if residuals.size > 0 and x.size > 2:
         stderr = float(np.sqrt(residuals[0] / (x.size - 2)))
@@ -74,70 +79,118 @@ def saturation_magnetization(
     return ms, {"chi": chi, "stderr": stderr, "window": (hmin, hmax), "unit": unit}
 
 
-def coercivity(df: pd.DataFrame, x_name: str, y_name: str) -> tuple[float, dict]:
-    """Determine coercive field by locating ``M=0`` crossings on each branch."""
+# ---------------------------------------------------------------------------
+# New analysis helpers ------------------------------------------------------
+# ---------------------------------------------------------------------------
+
+
+def fit_ms_linear(
+    df: pd.DataFrame,
+    x_name: str,
+    y_name: str,
+    hmin: float,
+    hmax: float,
+) -> tuple[float, float, float, dict]:
+    """Fit ``M = χH + Ms`` on a high-field window.
+
+    Returns ``Ms``, ``χ``, ``R²`` and a details dict containing the window and
+    number of points used.
+    """
     h = _prepare_series(df[x_name])
     m = _prepare_series(df[y_name])
-    if h.size < 4 or m.size < 4:
+    mask = (h >= hmin) & (h <= hmax)
+    x = h[mask]
+    y = m[mask]
+    if x.size < 2:
+        raise ValueError("Insufficient points in fit window")
+
+    A = np.column_stack([x, np.ones_like(x)])
+    coeffs, _, _, _ = np.linalg.lstsq(A, y, rcond=None)
+    chi, ms = coeffs[0], coeffs[1]
+    yhat = chi * x + ms
+    ss_res = float(np.sum((y - yhat) ** 2))
+    ss_tot = float(np.sum((y - np.mean(y)) ** 2))
+    r2 = float(1 - ss_res / ss_tot) if ss_tot > 0 else float("nan")
+    return ms, chi, r2, {"n": int(x.size), "window": (hmin, hmax)}
+
+
+def coercivity(
+    df: pd.DataFrame,
+    x_name: str,
+    y_name: str,
+    hwin: tuple[float, float] | None = None,
+) -> tuple[float, dict]:
+    """Compute coercive field as mean |H| of ``M=0`` crossings.
+
+    ``hwin`` defines a symmetric window ``(hmin, hmax)`` around zero.  If not
+    provided a window of ±2% of the absolute maximum field is used.
+    """
+    h = _prepare_series(df[x_name])
+    m = _prepare_series(df[y_name])
+    if h.size < 2 or m.size < 2:
         raise ValueError("Not enough data points")
 
-    mid = h.size // 2
-    h1, m1 = h[:mid], m[:mid]
-    h2, m2 = h[mid:], m[mid:]
-
-    # Determine orientation of branches
-    if h1[-1] > h1[0]:
-        asc_h, asc_m = h1, m1
-        desc_h, desc_m = h2, m2
+    if hwin is None:
+        max_h = float(np.nanmax(np.abs(h)))
+        w = 0.02 * max_h
+        hmin, hmax = -w, w
     else:
-        desc_h, desc_m = h1, m1
-        asc_h, asc_m = h2, m2
+        hmin, hmax = hwin
+    mask = (h >= hmin) & (h <= hmax)
+    h_w = h[mask]
+    m_w = m[mask]
+    if h_w.size < 2:
+        raise ValueError("No data in coercivity window")
 
-    def _branch_zero(hb: np.ndarray, mb: np.ndarray) -> float:
-        idxs = np.where(np.diff(np.sign(mb)) != 0)[0]
-        if idxs.size == 0:
-            raise ValueError("No zero crossing found on branch")
-        zeros = []
+    def _find_zeros(h_arr: np.ndarray, m_arr: np.ndarray) -> tuple[list[float], list[float]]:
+        idxs = np.where(np.diff(np.sign(m_arr)) != 0)[0]
+        zeros: list[float] = []
         for i in idxs:
-            h1, h2 = hb[i], hb[i + 1]
-            m1, m2 = mb[i], mb[i + 1]
+            h1, h2 = h_arr[i], h_arr[i + 1]
+            m1, m2 = m_arr[i], m_arr[i + 1]
             hz = h1 + (h2 - h1) * (-m1) / (m2 - m1)
             zeros.append(hz)
-        return min(zeros, key=lambda v: abs(v))
+        pos = [z for z in zeros if z >= 0]
+        neg = [z for z in zeros if z <= 0]
+        return pos, neg
 
-    hz_asc = _branch_zero(asc_h, asc_m)
-    hz_desc = _branch_zero(desc_h, desc_m)
-    hc = float(0.5 * (abs(hz_asc) + abs(hz_desc)))
-    return hc, {"ascending": hz_asc, "descending": hz_desc, "unit": "raw"}
+    pos, neg = _find_zeros(h_w, m_w)
+    if (not pos or not neg) and hwin is not None:
+        pos, neg = _find_zeros(h, m)
+    if not pos or not neg:
+        zeros = pos + neg
+        if not zeros:
+            raise ValueError("Could not find zero crossings")
+        hc = float(np.mean([abs(z) for z in zeros]))
+        det = {"window": (hmin, hmax)}
+        if pos:
+            det["Hc_pos"] = pos[0]
+        if neg:
+            det["Hc_neg"] = neg[0]
+        return hc, det
+    hc_pos = min(pos, key=abs)
+    hc_neg = max(neg, key=abs)
+    hc = 0.5 * (abs(hc_pos) + abs(hc_neg))
+    return float(hc), {"Hc_pos": hc_pos, "Hc_neg": hc_neg, "window": (hmin, hmax)}
 
 
 def remanence(
     df: pd.DataFrame,
     x_name: str,
     y_name: str,
-    fit_points: int = 4,
-    smooth: bool = False,
+    h0: float = 0.0,
+    window_pts: int = 4,
 ) -> tuple[float, dict]:
-    """Interpolate magnetisation at ``H=0`` using local linear fit."""
+    """Interpolate magnetisation at ``H=h0`` using nearest points."""
     h = _prepare_series(df[x_name])
     m = _prepare_series(df[y_name])
     if h.size < 2 or m.size < 2:
         raise ValueError("Not enough data points")
-    if not (h.min() <= 0 <= h.max()):
-        raise ValueError("Field does not include 0")
+    if not (h.min() <= h0 <= h.max()):
+        raise ValueError("Field does not include interpolation point")
 
-    if smooth:
-        try:
-            from scipy.signal import savgol_filter
-
-            win = min(len(m) // 2 * 2 + 1, 7)
-            if win >= 3:
-                m = savgol_filter(m, win, 1)
-        except Exception as exc:  # noqa: BLE001
-            raise RuntimeError("Savitzky–Golay smoothing failed") from exc
-
-    order = np.argsort(np.abs(h))
-    n = min(max(fit_points, 2), order.size)
+    order = np.argsort(np.abs(h - h0))
+    n = min(max(window_pts, 2), order.size)
     sel = order[:n]
     x = h[sel]
     y = m[sel]
@@ -145,5 +198,6 @@ def remanence(
     A = np.column_stack([x, np.ones_like(x)])
     coeffs, _, _, _ = np.linalg.lstsq(A, y, rcond=None)
     slope, intercept = coeffs[0], coeffs[1]
-    mr = float(intercept)
-    return mr, {"slope": slope, "n": n, "unit": "raw"}
+    return float(intercept), {"slope": float(slope), "n": int(n), "h0": h0}
+
+
